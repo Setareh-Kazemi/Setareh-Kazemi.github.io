@@ -47,7 +47,7 @@ A total of 17 people participated in this experiment. Each session of the experi
 ## Data Files: 
 
 In the **\data** folder there are three **.xlx** files and 17 folders with names of subjects:
-   1. [a relative link](experimental_design.xlsx): In the sheet "For analysis" of this file the random order of task conditions (combinations of load and pace) are assigned to different participants. This file is later used in the analysis to understand what task condition was performed in each session of the experiment. 
+   1. [experimental_design.xlsx](data/experimental_design.xlsx): In the sheet "For analysis" of this file the random order of task conditions (combinations of load and pace) are assigned to different participants. This file is later used in the analysis to understand what task condition was performed in each session of the experiment. 
    3. experimental_details.xlsx: In the sheet "For analysis" of this file the time associated with each strength test is identified to be used later in the analysis.
    4. subject_anthropometrics: In this file the anthropometrics of participants are saved including their: gender, age, height(cm), weight(kg), waist circumference (cm), hip circumference (cm), and body mass index (BMI).
    5. Folders "subjx": In each folder, there are folders named 'session01', 'session02', 'session03', and 'session04'. Some participants who did not complete the experiment and missed one or more sessions might not have all four session folders. In each 'sessionx' folder there are two objects:

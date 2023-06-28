@@ -1,6 +1,6 @@
 ## Project Title
 
-- **Functional ANOVA for Upper Extremity Fatigue Analysis during Dynamic Order Picking**
+**Functional ANOVA for Upper Extremity Fatigue Analysis during Dynamic Order Picking**
 
 --- 
 

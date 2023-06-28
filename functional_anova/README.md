@@ -41,7 +41,7 @@ In this repository you can find the code for the functional ANOVA to find the si
 
 A total of 17 people participated in this experiment. Each session of the experiment consisted of three 45-minute periods, with two 15-minute breaks in between the work periods. The [Borg 0-10 Ratings of Perceived Exertion (RPE) Scale](https://my.clevelandclinic.org/health/articles/17450-rated-perceived-exertion-rpe-scale) were captured for each subject every 5 minutes of the experiment. Furthermore, isometric strength tests were taken every 9 minutes. In this analysis, only the data related to the first 45 minutes of experiments were used to assess the impact of task characteristics on the accumulated fatigue, as well as compare the two fatigue indicators (RPE and muscle strength). A demonstration of the different stages of the experiment task is shown in the below figure.
 
-![Image of workstation](Simulated workstation.png)
+![Image of workstation](Simulated-workstation.png)
 
 ---
 ## Data Files: 

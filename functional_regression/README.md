@@ -30,7 +30,8 @@ In this document all the code, results and analysis related to the associated pa
 
 6.  Checking models' assumptions (residual analysis)
 
-![Image of Framework](FANOVAFlowchart-Page-1.png)
+![Image of Framework](functional regression-Phase-1.png)
+![Image of Framework](functional regression-Phase-2.png)
 
 ---
 ## Introduction of the Experiment and Data:
@@ -43,7 +44,7 @@ In this repository you can find the code for the functional regression to explai
 
 A total of 17 people participated in this experiment. Each session of the experiment consisted of three 45-minute periods, with two 15-minute breaks in between the work periods. The [Borg 0-10 Ratings of Perceived Exertion (RPE) Scale](https://my.clevelandclinic.org/health/articles/17450-rated-perceived-exertion-rpe-scale) were captured for each subject every 5 minutes of the experiment.  A demonstration of the different stages of the experiment task is shown in the below figure.
 
-![Image of workstation](Simulated-workstation.png)
+![Image of workstation](Simulated workstation.png)
 
 ---
 ## Data Files: 

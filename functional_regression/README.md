@@ -49,12 +49,14 @@ A total of 17 people participated in this experiment. Each session of the experi
 ---
 ## Data Files: 
 
-In the [**data**](data) folder there are three **.xlsx** files and 17 folders with names of subjects:
-   1. [experimental_design.xlsx](data/experimental_design.xlsx): In the sheet "For analysis" of this file the random order of task conditions (combinations of load and pace) are assigned to different participants. This file is later used in the analysis to understand what task condition was performed in each session of the experiment. 
-   2. [experimental_details.xlsx](data/experimental_details.xlsx): In the sheet "For analysis" of this file the time associated with each strength test is identified to be used later in the analysis.
-   3. [subject_anthropometrics.xlsx](data/subject_anthropometrics.xlsx): In this file the anthropometrics of participants are saved including their: gender, age, height(cm), weight(kg), waist circumference (cm), hip circumference (cm), and body mass index (BMI).
-   4. [Folders "subjx"](data/subj01): In each folder, there are folders named ['session01'](data/subj01/session01), 'session02', 'session03', and 'session04'. Some participants who did not complete the experiment and missed one or more sessions might not have all four session folders. In each 'sessionx' folder there are two objects:
-      - [RPE.xlsx file](data/subj01/session01/RPE.xlsx): This file contains the reported RPE scores and their associated time, as well as the period of study (work/ break).
+In the [**data**](data) folder, there is an [**input**](input) folder which includes the below files:
+   1. [Anthropometric_data.RData](data/inputs/Anthropometric_data.RData): In this file the anthropometrics of participants are saved including their: gender, age, height(cm), weight(kg), waist circumference (cm), hip circumference (cm), and body mass index (BMI).
+   2. [Experimental_Design.xlsx](data//inputs/Experimental_Design.xlsx): In the sheet "For analysis" of this file the random order of task conditions (combinations of load and pace) are assigned to different participants. This file is later used in the analysis to understand what task condition was performed in each session of the experiment. 
+   3. [Features.RData](data/inputs//Features.RData): This file contains the statistical feaures extracted from five-bottle cycles of movement in the experiment.
+   4. [IMU_Raw.txt](data//inputs/IMU_Raw.txt): This file contains the link to access the large raw IMU data, provided in gogle drive for download.
+   5. [corrected_Changepoints.csv](data//inputs/corrected_Changepoints.csv): In this file the changepoints identifying the start and end of the first 45-minute of experiment are provided.
+   6. [y.RData](y.RData): In this file the raw RPE scores for the 44 full sessions are provided. full sessions are related to those sessions which the participants were able to finish the whole 45-minute duration of the experiment.
+   7. [y_T_val.RData](y_T_val.RData): In this file the transformed RPE scores for the 44 full sessions are provided which is calculated using the multivariate BOX Cox method. The codes for extracting the RPE and TRPE values are provided in our previous project which can be found in ['functional_anova'](functional_anova).
   
 
 ---

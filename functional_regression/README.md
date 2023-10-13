@@ -30,7 +30,7 @@ In this document all the code, results and analysis related to the associated pa
 
 6.  Checking models' assumptions (residual analysis)
 
-![Image of Framework](functional regression-Phase-1.png)
+![Image of Framework]('functional regression-Phase-1.png')
 ![Image of Framework](functional regression-Phase-2.png)
 
 ---

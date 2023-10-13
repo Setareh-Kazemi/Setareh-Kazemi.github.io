@@ -51,12 +51,12 @@ A total of 17 people participated in this experiment. Each session of the experi
 
 In the [**data**](data) folder, there is an [**input**](input) folder which includes the below files:
    1. [Anthropometric_data.RData](data/inputs/Anthropometric_data.RData): In this file the anthropometrics of participants are saved including their: gender, age, height(cm), weight(kg), waist circumference (cm), hip circumference (cm), and body mass index (BMI).
-   2. [Experimental_Design.xlsx](data//inputs/Experimental_Design.xlsx): In the sheet "For analysis" of this file the random order of task conditions (combinations of load and pace) are assigned to different participants. This file is later used in the analysis to understand what task condition was performed in each session of the experiment. 
+   2. [Experimental_Design.xlsx](data/inputs/Experimental_Design.xlsx): In the sheet "For analysis" of this file the random order of task conditions (combinations of load and pace) are assigned to different participants. This file is later used in the analysis to understand what task condition was performed in each session of the experiment. 
    3. [Features.RData](data/inputs//Features.RData): This file contains the statistical feaures extracted from five-bottle cycles of movement in the experiment.
    4. [IMU_Raw.txt](data//inputs/IMU_Raw.txt): This file contains the link to access the large raw IMU data, provided in gogle drive for download.
    5. [corrected_Changepoints.csv](data//inputs/corrected_Changepoints.csv): In this file the changepoints identifying the start and end of the first 45-minute of experiment are provided.
    6. [y.RData](y.RData): In this file the raw RPE scores for the 44 full sessions are provided. full sessions are related to those sessions which the participants were able to finish the whole 45-minute duration of the experiment.
-   7. [y_T_val.RData](y_T_val.RData): In this file the transformed RPE scores for the 44 full sessions are provided which is calculated using the multivariate BOX Cox method. The codes for extracting the RPE and TRPE values are provided in our previous project which can be found in ['functional_anova'](functional_anova).
+   7. [y_T_val.RData](y_T_val.RData): In this file the transformed RPE scores for the 44 full sessions are provided which is calculated using the multivariate BOX Cox method. The codes for extracting the RPE and TRPE values are provided in our previous project which can be found in ['functional_anova'](./functional_anova).
   
 
 ---

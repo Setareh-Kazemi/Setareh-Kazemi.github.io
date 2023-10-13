@@ -1,0 +1,2322 @@
+---
+title: "Explaining the Variability in the Profiles of Ratings of Perceived Exertion for a Dynamic Upper Extremity Task: A Functional Regression Approach"
+author:
+- name: Setareh Kazemi Kheiri
+  orcid: 0000-0001-8917-1823
+  email: skazemik@buffalo.edu
+  affiliations:
+    - name: Department of Industrial and Systems Engineering, University at Buffalo
+      address: 429 Bell Hall
+      city: Buffalo
+      state: NY
+      postal-code: 14260-2050
+- name: Sahand Hajifar
+  orcid: 0000-0002-1905-7328
+  email: sahandha@buffalo.edu
+  affiliations:
+    - name: Department of Industrial and Systems Engineering, University at Buffalo
+      address: 429 Bell Hall
+      city: Buffalo
+      state: NY
+      postal-code: 14260-2050
+- name: Linh Tran
+  orcid: 0000-0000-0000-0000
+  email: tranlh2@miamioh.edu
+  affiliations:
+    - name: Farmer School of Business, Miami University
+      address: 800 E. High St.
+      city: Oxford
+      state: OH
+      postal-code: 45056
+- name: Zahra Vahedi
+  orcid: 0000-0002-3530-777x
+  email: zahravah@buffalo.edu
+  affiliations:
+    - name: Department of Industrial and Systems Engineering, University at Buffalo
+      address: 429 Bell Hall
+      city: Buffalo
+      state: NY
+      postal-code: 14260-2050
+- name: Lora A. Cavuoto
+  orcid: 0000-0003-4717-8378
+  email: loracavu@buffalo.edu
+  corresponding: true
+  affiliations:
+    - name: Department of Industrial and Systems Engineering, University at Buffalo
+      address: 407 Bell Hall
+      city: Buffalo
+      state: NY
+      postal-code: 14260-2050
+- name: Fadel M. Megahed
+  orcid: 0000-0003-2194-5110
+  email: fmegahed@miamioh.edu
+  affiliations:
+    - name: Farmer School of Business, Miami University
+      address: 800 E. High St.
+      city: Oxford
+      state: OH
+      postal-code: 45056
+- name: Hongyue Sun
+  orcid: 0000-0003-2871-5502
+  email: ongyuesun@uga.edu
+  affiliations:
+    - name: College of Engineering, University of Georgia 
+      address: 1040B Interdisciplinary STEM Research Complex, Bldg 1, 302 East Campus Road
+      city: Athens
+      state: GA
+      postal-code: 30602
+        
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+format: 
+  html:
+    code-fold: false
+    code-tools: true
+    code-download: true
+    code-link: true
+    highlight-style: pygments
+    number-sections: true
+    paged-df: true
+    toc: true
+    toc-float: true
+    code-overflow: wrap
+    
+cache: true
+editor: visual
+---
+
+# Objectives of this Document {.unnumbered}
+
+In this document all the code, results and analysis related to the associated paper entitled "Explaining the Variability in the Profiles of Ratings of Perceived Exertion for a Dynamic Upper Extremity Task: A Functional Regression Approach" are provided. The main objective of doing this research was gaining a better understanding of how different factors contribute to the development of fatigue during manual material handling (MMH) operations in a simulated warehousing environment. Our approach is divided into the following main steps:
+
+1.  Data pre-processing;
+
+2.  Data transformation;
+
+3.  Functional feature extraction;
+
+4.  Functional regression on the transformed data with different set of scalar and functional features;
+
+5.  Benchmark models;
+
+6.  Checking models' assumptions (residual analysis)
+
+------------------------------------------------------------------------
+
+# R Setup and Required Packages
+
+In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used for our analysis. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+# Setting the random seed and chunk dependencies
+knitr::opts_chunk$set(cache.extra = set.seed(2022),
+                      autodep = TRUE) 
+
+# Load required packages
+if(require(pacman)==F) install.packages('pacman')
+pacman::p_load(tidyverse, stringr, magrittr, purrr, imputeTS, timetk, refund, forecast, zoo, kableExtra, DT, stargazer, readxl)
+
+# Graphic setup
+theme_set(theme_bw() +
+          theme(legend.position = 'top',
+                axis.title = element_text(size=8)))
+scale_colour_discrete = scale_color_brewer(palette = "Dark2")
+
+# Load features data 
+load("Features.RData")
+
+# Load TRPE 
+load("y_T_val.RData")
+
+# Load RPE
+load("y.RData")
+
+# load Anthropometric data
+load("Anthrpmtrc_data.RData")
+
+# load raw IMU data
+load("IMU_raw.RData")
+
+design = readxl::read_excel("Experiment Design.xlsx", col_names = F) #The excel file which shows the random order of task conditions assigned to each subject in each session of the experiment
+
+CP = read.csv("corrected_Changepoints.csv") #The changepoints based on the raw sensors input
+
+
+```
+
+# Data Preprocessing
+
+## Overview
+
+### Features
+
+```{r}
+#| warning: false
+#| message: false
+
+# We excluded FFT features for the purpose of this study
+features = features_all |> 
+  dplyr::select(-c(dplyr::contains("FFT"), cycle, Acc_Length))
+
+# Display features
+DT::datatable(
+  data = features, rownames = F, 
+  extensions = c('Buttons','FixedColumns'),
+  options = list(
+    dom = 'Bfrtip',
+    buttons = c('csv', 'excel', 'pdf', 'print'),
+    paging = TRUE, searching = TRUE, info = FALSE,
+    sort = TRUE, scrollX = TRUE, fixedColumns = list(leftColumns = 3)
+  )
+) %>% 
+  DT::formatRound(
+    columns = 5:ncol(features), 
+    digits = 3)
+
+```
+
+### TRPE
+
+The TRPE is the transformed RPE, using a multivariate Box-Cox transformation. Details on how this was implemented can be found in our previous work.
+
+In the code chunk below, we assigned the row names and column names for the TRPE data (i.e. `y_T_val`) as those from the orignial RPE data (i.e. `y`) since the two shared the same structure.
+
+```{r}
+## extract subject-condition from the RPE df and reformat
+## e.g. from "Sub01 Condition 1.5-15" to "1-1.5-15"
+y_sub_con = rownames(y) |> 
+  stringr::str_c(collapse = ",") |> 
+  stringr::str_replace_all(c(" Condition " = "-", "Sub(0)?" = "")) |> 
+  stringr::str_split(pattern = ",") |> 
+  magrittr::extract2(1)
+
+## assign col names and row names for y_T_val
+rownames(y_T_val) = y_sub_con
+colnames(y_T_val) = as.numeric(substr(colnames(y),2,3))
+
+```
+
+```{r}
+## Display TRPE
+DT::datatable(
+  data = y_T_val, 
+  extensions = c('Buttons','FixedColumns'),
+  options = list(
+    dom = 'Bfrtip',
+    buttons = c('csv', 'excel', 'pdf', 'print'),
+    paging = TRUE, searching = TRUE, info = FALSE,
+    sort = TRUE, scrollX = TRUE, fixedColumns = list(leftColumns = 1)
+  )
+) %>% 
+  DT::formatRound(
+    columns = 1:ncol(y_T_val), 
+    digits = 3)
+
+
+```
+
+## Prepare the input data for modeling
+
+For the purpose of this study, we only selected features of those cycles whose median time was the closest to the time when an RPE was recorded.
+
+It must also be noted that the extracted features contained 50 subject-sessions after removing those whose features were considered outliers, while the TRPE data contained 44, wherein the participants successfully completed the full first 45 minutes. As a result, it is important to only select the data of the subject-sessions whose features and TRPE are both available as the input for our models.
+
+```{r}
+features = features |> 
+  # filter out NAs (i.e. only select the desired cycles)
+  dplyr::filter(!is.na(rpe)) |> 
+  dplyr::mutate(sub_con = str_c(subject, str_split(condition, " ", simplify = T)[,2], sep = "-"), .keep="unused", .before = Time,
+                subject = as.character(subject)) |> 
+  # only keep data of the matched subject-sessions (or subject-conditions)
+  dplyr::filter(sub_con %in% y_sub_con) |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::arrange(Time, .by_group = T) |> 
+  dplyr::mutate(Time = as.integer(5*(row_number() - 1))) |> 
+  dplyr::select(-c(session, rpe)) |> 
+  dplyr::ungroup()
+
+```
+
+In the code chunk below, we can see that there were a total of 37 subject-sessions, each had 10 observations (corresponding to the 10 RPEs recorded every 5 minutes during the 45-minute interval of the experiment). However, `subject 10 - session 4` and `subject 17 - session 3` only contained 9 observations. This was because the cycle associated with their 10th RPE was considered an outlier and was removed during the feature extraction step.
+
+```{r}
+summary = features |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::tally()
+
+```
+
+To overcome this issue, given that there were only two subject-sessions that missed the features for one time point (out of 10), we decided to impute the missing values to make use of the data that we got.
+
+In the code chunk below, we compare several imputation methods (median, naive, simple moving average, weighted moving average, and Kalman smoothing) to see which one results in the lowest average MAE, MAPE, RMSE across all features, using the subject-sessions that have full data.
+
+```{r}
+#| message: false
+#| warning: false
+
+
+# get subject-sessions with full 10 RPEs
+
+full_rpe = features |> 
+  dplyr::filter(!sub_con %in% c("10-2.5-5", "17-2.5-5")) |> 
+  dplyr::select(-c(subject))
+
+# try different imputation methods
+median = full_rpe |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::summarise(across(-c("Time"), \(x) median(x))) |> 
+  dplyr::select(-c(sub_con))
+
+naive = full_rpe |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::filter(Time == 40) |> 
+  dplyr::ungroup() |> 
+  dplyr::select(-c(Time, sub_con))
+
+sma = full_rpe |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::mutate(across(-c("Time"), \(x) if_else(Time == 45, NA_real_, x))) |> 
+  dplyr::mutate(across(-c("Time"), \(x) imputeTS::na_ma(x, k=3, weighting = "simple"))) |> 
+  dplyr::filter(Time == 45) |> 
+  dplyr::ungroup() |>
+  dplyr::select(-c(Time, sub_con))
+
+lwma = full_rpe |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::mutate(across(-c("Time"), \(x) if_else(Time == 45, NA_real_, x))) |> 
+  dplyr::mutate(across(-c("Time"), \(x) imputeTS::na_ma(x, k=3, weighting = "linear"))) |> 
+  dplyr::filter(Time == 45) |> 
+  dplyr::ungroup() |>
+  dplyr::select(-c(Time, sub_con))
+
+ewma = full_rpe |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::mutate(across(-c("Time"), \(x) if_else(Time == 45, NA_real_, x))) |> 
+  dplyr::mutate(across(-c("Time"), \(x) imputeTS::na_ma(x, k=3))) |> 
+  dplyr::filter(Time == 45) |> 
+  dplyr::ungroup() |>
+  dplyr::select(-c(Time, sub_con))
+  
+
+kalman = full_rpe |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::mutate(across(-c("Time"), \(x) if_else(Time == 45, NA_real_, x))) |> 
+  dplyr::mutate(across(-c("Time"), \(x) na_kalman(x))) |> 
+  dplyr::filter(Time == 45) |> 
+  dplyr::ungroup() |>
+  dplyr::select(-c(Time, sub_con))
+
+# compare
+
+org = full_rpe |> 
+  dplyr::filter(Time == 45) |> 
+  dplyr::select(-c(sub_con, Time))
+
+metrics_extract = function(imp, org) {
+  metrics = purrr::map2_dfr(.x =imp, .y = org, .f = forecast::accuracy)
+
+MAE = metrics |>
+  dplyr::mutate(across(1:54, \(x) magrittr::extract2(x, 3))) |> 
+  tidyr::pivot_longer(everything(), names_to = "features", values_to = "MAE")
+
+MAPE = metrics |>
+  dplyr::mutate(across(1:54, \(x) magrittr::extract2(x, 5))) |> 
+  tidyr::pivot_longer(everything(), names_to = "features", values_to = "MAPE")
+
+RMSE = metrics |>
+  dplyr::mutate(across(1:54, \(x) magrittr::extract2(x, 2))) |> 
+  tidyr::pivot_longer(everything(), names_to = "features", values_to = "RMSE")
+
+all_metrics = MAE |> 
+  dplyr::inner_join(MAPE, by = "features") |> 
+  dplyr::inner_join(RMSE, by = "features") |> 
+  dplyr::summarise(across(c("MAE", "MAPE", "RMSE"),
+                   list(Avg = mean)))
+}
+
+
+summary = dplyr::bind_rows(
+  metrics_extract(median, org) |> dplyr::mutate(method = "Median"),
+  metrics_extract(naive, org) |> dplyr::mutate(method = "Naive"),
+  metrics_extract(sma, org) |> dplyr::mutate(method = "SMA"),
+  metrics_extract(lwma, org) |> dplyr::mutate(method = "LWMA"),
+  metrics_extract(ewma, org) |> dplyr::mutate(method = "EWMA"),
+  metrics_extract(kalman, org) |> dplyr::mutate(method = "Kalman")) |> 
+  dplyr::relocate(method, .before = "MAE_Avg")
+
+kbl(summary,
+    col.names = c('Methods', 'Avg MAE', 'Avg MAPE', 'Avg RMSE')) |> 
+  kable_styling(bootstrap_options = c("striped", "hover", "responsive"), position = "center", fixed_thead = T)
+```
+
+### Imputation
+
+Based on the result above, median is used to impute the missing features.
+
+```{r}
+#| warning: false
+#| message: false
+
+# Add 2 rows of NA feature values for subcon "10-2.5-5" and "17-2.5-5" at time 45
+na_rows = dplyr::bind_rows(tibble::as_tibble_row(c(10, "10-2.5-5", 45, rep(NA, 54)), .name_repair = 'unique'),
+                    tibble::as_tibble_row(c(17, "17-2.5-5", 45, rep(NA, 54)), .name_repair = 'unique'))
+colnames(na_rows) = colnames(features)
+
+na_rows = na_rows |> 
+  dplyr::mutate(across(.cols = 4:57, .fns = as.double),
+         Time = as.integer(Time))
+
+features = dplyr::bind_rows(features, na_rows)
+
+## Perform imputation with median
+features_imputed = features |> 
+  dplyr::group_by(sub_con) |> 
+  dplyr::mutate(across(.cols = everything(), \(x) replace_na(x, median(x, na.rm=T))))
+```
+
+### Joining the data together
+
+We then join the feature data with the TRPE and anthropometric data to get a complete dataset.
+
+```{r}
+Anthrpmtrc_data_c = Anthrpmtrc_data |> 
+  dplyr::mutate(subject = stringr::str_extract(`Sub#`, "[0-9]{2}") |> as.integer() |> as.character(), .keep = "unused") |> 
+  dplyr::select(-c(Session))
+
+input_data_nested = 
+  tibble::as_tibble(y_T_val, rownames = "sub_con") |> 
+  tidyr::pivot_longer(cols = -c(1), names_to = "Time", values_to = "TRPE") |> 
+  dplyr::mutate(xpace = str_split(sub_con, "-", simplify = T)[,2] |> as.numeric(),
+                xload = str_split(sub_con, "-", simplify = T)[,3]|> as.numeric(),
+                Time = as.integer(Time)) |> 
+  dplyr::inner_join(features_imputed, by = c("sub_con", "Time")) |> 
+  dplyr::group_by(subject, sub_con, xpace, xload) |> 
+  tidyr::nest() |> 
+  dplyr::left_join(Anthrpmtrc_data_c, by = "subject") |> 
+  dplyr::mutate(Gender = as.factor(Gender))
+
+colnames(input_data_nested)[6:11] = c("xgender", "xage", "xheight", "xweight", "xwaist", "xhip")
+
+## Extract list-columns
+
+for (i in 1:56) {
+  input_data_nested = input_data_nested |> 
+    dplyr::mutate(purrr::map(.x = data, .f = magrittr::extract2, i))
+  colnames(input_data_nested)[i+11] = colnames(input_data_nested$data[[1]])[[i]]
+}
+
+input_data_nested = input_data_nested |> 
+  dplyr::ungroup() |> 
+  dplyr::select(-c(data, subject))
+```
+
+### For Functional Regression Models
+
+Due to the unique input format of the `pffr()`, which is the function that we used to fit our functional regression models, this section is dedicated to transforming the input data into the suitable format.
+
+```{r}
+subcon = input_data_nested$sub_con ## extract sub-con
+time = input_data_nested$Time[[1]] ## extract time (i.e., 0, 5, 10, ... 45)
+
+## Copy scalar variables to an object named `input_data`
+input_data = c(input_data_nested[, 2:9])
+
+## Repeat the procedure above to the all features
+for (i in 11:65) {
+  ## create obj where the column is extracted and transformed to matrix form
+  ## make obj a list to append to `input_data`
+  obj = matrix(unlist(input_data_nested[i]), nrow = 37, ncol=10, byrow = T, 
+               dimnames = list(subcon, time)) |> list()
+  
+  input_data = c(input_data, obj) ## append
+  
+  names(input_data)[[i-2]] = colnames(input_data_nested[i]) ## assign name of the element with the corresponding feature name 
+}
+
+names(input_data)[[9]] = "Y"
+```
+
+# Functional Regression
+
+After preparing the inputs, they are fed into the `pffr` function of `refund` package. It is important to specify the type of covariates of the model based on the multivariate model specified in their package \# multivariate model:E(Y(t)) = \_0(t) + X1(s)\_1(s,t)ds + xlin \_3(t) + f_1(xte1, xte2) + f_2(xsmoo, t) + \_4 xconst. Since anthropometric data and task specifications (load and pace) are constant through the experiments, they are considered as constant variables (xconst). The features from sensors are smooth functions varying over y index (time), so they are considered as xsmooth.
+
+## With only task specifications
+
+```{r}
+#| warning: false
+# Model1 only considers task specifications
+model_1 <- pffr(Y ~
+                 c(xload)  +  # linear effect of xload constant over Y-index
+                 c(xpace),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_1)
+```
+
+## Adding individual characteristics
+
+```{r}
+# Model 2 considers the individual characteristics in addition to the task specifications
+model_2 <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_2)
+```
+
+## With only the individual characteristics
+
+```{r}
+# Model 3 considers only the individual characteristics
+model_3 <- pffr(Y ~
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_3)
+```
+
+## Adding statistical features from the sensors in addition to the individual characteristics and task specifications
+
+```{r}
+# Below models consider features from sensors in addition to the individual characteristics and task specifications.
+
+model_med <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Med )
+                 +s( Wrist_Jerk_Med )
+                 +s( Trunk_Acc_Med )
+                 +s( Trunk_Jerk_Med )
+                 +s( Upperarm_Acc_Med )
+                 +s( Upperarm_Jerk_Med ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_med)
+```
+
+```{r}
+model_mean <- pffr(Y ~
+                 c(xload)  + 
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Mean )
+                 +s( Wrist_Jerk_Mean )
+                 +s( Trunk_Acc_Mean )
+                 +s( Trunk_Jerk_Mean )
+                 +s( Upperarm_Acc_Mean )
+                 +s( Upperarm_Jerk_Mean ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_mean)
+```
+
+```{r}
+model_Perc25 <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Perc25 )
+                 +s( Wrist_Jerk_Perc25 )
+                 +s( Trunk_Acc_Perc25 )
+                 +s( Trunk_Jerk_Perc25 )
+                 +s( Upperarm_Acc_Perc25 )
+                 +s( Upperarm_Jerk_Perc25 ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_Perc25)
+```
+
+```{r}
+model_Perc75 <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Perc75 )
+                 +s( Wrist_Jerk_Perc75 )
+                 +s( Trunk_Acc_Perc75 )
+                 +s( Trunk_Jerk_Perc75 )
+                 +s( Upperarm_Acc_Perc75 )
+                 +s( Upperarm_Jerk_Perc75 ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_Perc75)
+```
+
+```{r}
+model_min <- pffr(Y ~
+                 c(xload)  +  
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Min )
+                 +s( Wrist_Jerk_Min )
+                 +s( Trunk_Acc_Min )
+                 +s( Trunk_Jerk_Min )
+                 +s( Upperarm_Acc_Min )
+                 +s( Upperarm_Jerk_Min ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_min)
+```
+
+```{r}
+model_max <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Max )
+                 +s( Wrist_Jerk_Max )
+                 +s( Trunk_Acc_Max )
+                 +s( Trunk_Jerk_Max )
+                 +s( Upperarm_Acc_Max )
+                 +s( Upperarm_Jerk_Max ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_max)
+```
+
+```{r}
+model_mad <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Mad )
+                 +s( Wrist_Jerk_Mad )
+                 +s( Trunk_Acc_Mad )
+                 +s( Trunk_Jerk_Mad )
+                 +s( Upperarm_Acc_Mad )
+                 +s( Upperarm_Jerk_Mad ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_mad)
+```
+
+```{r}
+model_rms <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Rms )
+                 +s( Wrist_Jerk_Rms )
+                 +s( Trunk_Acc_Rms )
+                 +s( Trunk_Jerk_Rms )
+                 +s( Upperarm_Acc_Rms )
+                 +s( Upperarm_Jerk_Rms ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_rms)
+```
+
+```{r}
+model_std <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( Wrist_Acc_Std )
+                 +s( Wrist_Jerk_Std )
+                 +s( Trunk_Acc_Std )
+                 +s( Trunk_Jerk_Std )
+                 +s( Upperarm_Acc_Std )
+                 +s( Upperarm_Jerk_Std ),
+                 data=input_data, method = "REML", algorithm = "gam")
+summary(model_std)
+```
+
+## **Modeling with raw sensors as functional inputs**
+
+In this section we extracted functional features from the raw sensor signals. In order to do that, we first applied a 4th order Butterworth filter in the signals and then the filtered signals were used to extract the features.
+
+### Data Extraction
+
+```{r}
+y_T_val = t(y_T_val)
+
+Conditions = as.vector(t(design[4:7, seq(5,69,4)]))
+ActiGraph_IMU_DF$Condition = rep(Conditions, 3)
+
+num_sub = length(unique(ActiGraph_IMU_DF$Subject))
+num_session = length(unique(ActiGraph_IMU_DF$Session))
+
+Session_List = vector(mode = "list", length = num_session)
+
+wrist_total_filtered = vector(mode = "list", length = num_sub)
+trunk_total_filtered = vector(mode = "list", length = num_sub)
+upperarm_total_filtered = vector(mode = "list", length = num_sub)
+
+wrist_total = vector(mode = "list", length = num_sub)
+trunk_total = vector(mode = "list", length = num_sub)
+upperarm_total = vector(mode = "list", length = num_sub)
+
+for (i in 1:num_sub)
+{
+  wrist_total_filtered[[i]] = Session_List
+  trunk_total_filtered[[i]] = Session_List
+  upperarm_total_filtered[[i]] = Session_List
+  wrist_total[[i]] = Session_List
+  trunk_total[[i]] = Session_List
+  upperarm_total[[i]] = Session_List
+  
+}
+
+# Butterworth Filter Function
+butter_filter_data = function(data){
+  n = 4 # The order of the Butterworth filter, which determines the complexity of the filter's transfer function.
+  fc = 0.2 # The cutoff frequency which is the frequency at which the filter's response starts to attenuate.
+  Fs = 100 # The sampling rate is 100 Hz for all IMU signals.
+  Wn = (2/Fs)*fc
+  butter_filter = signal::butter(n=n, W=Wn, type="low")
+  filt_data = signal::filtfilt(data, filt = butter_filter)
+}
+
+# Data frame filter function
+
+df_filter = function(df, threshold=15, sub, id){
+  metric = sym(metric)
+  df %>%
+    dplyr::mutate_at(2:10,.funs=butter_filter_data) %>%
+    dplyr::mutate(time= as.POSIXct(df[,1], origin="1970-01-01")) %>%
+    dplyr::mutate(time_diff_secs= as.numeric(difftime(time, time[1], units = "secs"))) %>%
+    dplyr::mutate(time_diff_mins= round(as.numeric(difftime(time, time[1], units = "mins")), digits = 0)) %>%
+    dplyr::mutate(max_time_diff_secs = max(time_diff_secs, na.rm = TRUE)) %>%
+    dplyr::mutate(interval = round(time_diff_secs / 300, digits = 0) * 300) %>%
+    dplyr::filter(abs(time_diff_secs - interval) <= threshold | (max_time_diff_secs-time_diff_secs)<=(2*threshold), time_diff_mins<=45)%>%
+    dplyr::relocate(c(time,time_diff_secs,time_diff_mins), .after = Timestamp)%>%
+    dplyr::mutate(interval = round(time_diff_mins / 5, digits = 0)) %>%
+    dplyr::group_by(interval) %>%
+    dplyr::summarise(across(1:13, ~median(., na.rm = TRUE))) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(time = time_diff_mins, subject = sub, condition = substr(ActiGraph_IMU_DF$Condition [id],11,16), sub_con = paste(subject,condition, sep="-")) %>%
+    dplyr::relocate(c(subject,condition,sub_con), .after = time)%>%
+    dplyr::select(-interval,-time_diff_mins,-time_diff_secs)%>%
+    mutate(time = if_else(row_number() == n() & last(time) != 45, 45, time))
+}
+
+
+for (sub in 1:num_sub)
+{
+  for (session in 1:num_session)
+  {
+  if (!is.na(CP$CP1[(session-1)*num_sub+sub]))
+  {
+  tryCatch({
+    
+  trunk_id = which(ActiGraph_IMU_DF$Subject == paste0("Sub", str_pad(sub, 2, pad = "0")) & 
+  ActiGraph_IMU_DF$Session == paste0("Session", session) & ActiGraph_IMU_DF$Part == "trunk")
+
+  wrist_id = which(ActiGraph_IMU_DF$Subject == paste0("Sub", str_pad(sub, 2, pad = "0")) & 
+                   ActiGraph_IMU_DF$Session == paste0("Session", session) & ActiGraph_IMU_DF$Part == "wrist")
+  
+  upperarm_id = which(ActiGraph_IMU_DF$Subject == paste0("Sub", str_pad(sub, 2, pad = "0")) & 
+                   ActiGraph_IMU_DF$Session == paste0("Session", session) & ActiGraph_IMU_DF$Part == "upper arm")
+
+  CP1 = CP[CP$Subject == paste0("Sub", str_pad(sub, 2, pad = "0")) & CP$Session == paste0("Session", session), 3]
+  CP2 = CP[CP$Subject == paste0("Sub", str_pad(sub, 2, pad = "0")) & CP$Session == paste0("Session", session), 4]
+  
+
+  trunk_data <- ActiGraph_IMU_Data[[trunk_id]]
+  trunk_data <- trunk_data[which(trunk_data$Timestamp >= CP1 & trunk_data$Timestamp <= CP2),]
+  
+  upperarm_data <- ActiGraph_IMU_Data[[upperarm_id]]
+  upperarm_data = upperarm_data[which(upperarm_data$Timestamp >= CP1 & upperarm_data$Timestamp <= CP2),]
+  
+  wrist_data <- ActiGraph_IMU_Data[[wrist_id]]
+  wrist_data = wrist_data[which(wrist_data$Timestamp >= CP1 & wrist_data$Timestamp <= CP2),]
+  
+
+  if ((sub == 15 & session == 3) | sub == 16)
+  {
+    trunk_data = trunk_data %>% dplyr::mutate(trunk_data[,c(2,3,5,6,8,9)],-1*trunk_data[,c(2,3,5,6,8,9)])
+  }
+  
+  if(is.null(trunk_data)) {
+  trunk_data_filtered <- NULL
+  trunk_total_filtered[[sub]][[session]]<- NULL
+  trunk_total[[sub]][[session]] <- NULL
+  } else {
+    trunk_total[[sub]][[session]] = trunk_data %>% dplyr::mutate(sub_con = paste(sub,substr(ActiGraph_IMU_DF$Condition [trunk_id],11,16),sep = "-")) %>%
+      dplyr::relocate(sub_con,.after = Timestamp)
+                                                                 
+    trunk_data_filtered <-df_filter(trunk_data, threshold=15, sub, trunk_id)
+    trunk_total_filtered[[sub]][[session]] = trunk_data_filtered
+    names(trunk_total_filtered[[sub]])[session] <- substr(ActiGraph_IMU_DF$Condition [trunk_id],11,16)
+  }
+  
+  if(is.null(wrist_data)) {
+  wrist_data_filtered <- NULL
+  wrist_total_filtered[[sub]][[session]] <- NULL
+  wrist_total[[sub]][[session]] <- NULL
+  } else {
+    wrist_total[[sub]][[session]] = wrist_data %>% dplyr::mutate(sub_con = paste(sub,substr(ActiGraph_IMU_DF$Condition [wrist_id],11,16),sep = "-")) %>%
+      dplyr::relocate(sub_con,.after = Timestamp)
+    
+    wrist_data_filtered <-df_filter(wrist_data, threshold=15, sub, wrist_id)
+    wrist_total_filtered[[sub]][[session]] = wrist_data_filtered
+    names(wrist_total_filtered[[sub]])[session] <- substr(ActiGraph_IMU_DF$Condition[wrist_id],11,16)
+  }
+  
+  if(is.null(upperarm_data)) {
+  upperarm_data_filtered <- NULL
+  upperarm_total_filtered[[sub]][[session]] <- NULL
+  upperarm_total[[sub]][[session]] <- NULL
+  } else {
+    upperarm_total[[sub]][[session]] = upperarm_data %>% dplyr::mutate(sub_con = paste(sub,substr(ActiGraph_IMU_DF$Condition [upperarm_id],11,16),sep = "-")) %>%
+      dplyr::relocate(sub_con,.after = Timestamp)
+    
+    upperarm_data_filtered = df_filter(upperarm_data, threshold=15, sub, upperarm_id)
+    upperarm_total_filtered[[sub]][[session]] = upperarm_data_filtered
+    names(upperarm_total_filtered[[sub]])[session] <- substr(ActiGraph_IMU_DF$Condition[upperarm_id],11,16)
+  }
+  
+  }, error = function(e) {})
+  }
+  }
+}
+
+trunk_total_df = lapply(trunk_total, dplyr::bind_rows)
+trunk_total_df = dplyr::bind_rows(trunk_total_df)
+trunk_total_df = trunk_total_df %>% 
+  dplyr::filter(sub_con %in% colnames(y_T_val)) %>% 
+  dplyr::rename_with(~paste0('trunk_',.), .cols = 3:11) %>%
+  dplyr::rename_with(~gsub("\\.", "_", .), .cols = 3:11)
+
+trunk_total_filtered_df = lapply(trunk_total_filtered, dplyr::bind_rows)
+trunk_total_filtered_df = dplyr::bind_rows(trunk_total_filtered_df)
+trunk_total_filtered_df = trunk_total_filtered_df %>% 
+  dplyr::filter(sub_con %in% colnames(y_T_val)) %>% 
+  dplyr::rename_with(~paste0('trunk_',.), .cols = 6:14) %>%
+  dplyr::rename_with(~gsub("\\.", "_", .), .cols = 6:14)
+
+wrist_total_df = lapply(wrist_total, dplyr::bind_rows)
+wrist_total_df = dplyr::bind_rows(wrist_total_df)
+wrist_total_df = wrist_total_df %>% 
+  dplyr::filter(sub_con %in% colnames(y_T_val)) %>% 
+  dplyr::rename_with(~paste0('wrist_',.), .cols = 3:11) %>%
+  dplyr::rename_with(~gsub("\\.", "_", .), .cols = 3:11)
+
+wrist_total_filtered_df = lapply(wrist_total_filtered, dplyr::bind_rows)
+wrist_total_filtered_df = dplyr::bind_rows(wrist_total_filtered_df)
+wrist_total_filtered_df = wrist_total_filtered_df %>% 
+  dplyr::filter(sub_con %in% colnames(y_T_val)) %>% 
+  dplyr::rename_with(~paste0('wrist_',.), .cols = 6:14) %>%
+  dplyr::rename_with(~gsub("\\.", "_", .), .cols = 6:14)
+
+upperarm_total_df = lapply(upperarm_total, dplyr::bind_rows)
+upperarm_total_df = dplyr::bind_rows(upperarm_total_df)
+upperarm_total_df = upperarm_total_df %>% 
+  dplyr::filter(sub_con %in% colnames(y_T_val)) %>% 
+  dplyr::rename_with(~paste0('upperarm_',.), .cols = 3:11) %>%
+  dplyr::rename_with(~gsub("\\.", "_", .), .cols = 3:11)
+
+upperarm_total_filtered_df = lapply(upperarm_total_filtered, dplyr::bind_rows)
+upperarm_total_filtered_df = dplyr::bind_rows(upperarm_total_filtered_df)
+upperarm_total_filtered_df = upperarm_total_filtered_df %>% 
+  dplyr::filter(sub_con %in% colnames(y_T_val)) %>%
+  dplyr::rename_with(~paste0('upperarm_',.), .cols = 6:14) %>%
+  dplyr::rename_with(~gsub("\\.", "_", .), .cols = 6:14)
+
+rm(trunk_data_filtered,trunk_total,trunk_total_filtered, wrist_total,wrist_total_filtered, upperarm_total, upperarm_total_filtered )
+
+# sensors_total_df = trunk_total_df %>%
+#   dplyr::left_join(upperarm_total_df, by = c('sub_con','Timestamp')) %>%
+#   dplyr::left_join(wrist_total_filtered_df, by = c('sub_con','Timestamp'))
+# Got this error: Error: vector memory exhausted (limit reached?)
+
+sensors_total_filtered_df = trunk_total_filtered_df %>%
+  dplyr::left_join(upperarm_total_filtered_df, by = c('sub_con','time','subject','condition','Timestamp')) %>%
+  dplyr::left_join(wrist_total_filtered_df, by = c('sub_con','time','subject','condition','Timestamp'))
+```
+
+```{r}
+#| warning: false
+
+subjects_sensors = substr(colnames(y_T_val),1,2)
+subjects_sensors[which(substr(subjects_sensors,2,2)=="-")]=paste0(0,substr(subjects_sensors[which(substr(subjects_sensors,2,2)=="-")],1,1))
+subjects_sensors = paste0("Sub", subjects_sensors)
+
+input_data_sensors = vector(mode= "list")
+input_data_sensors[[1]] <- input_data_sensors$Y <- t(y_T_val)
+input_data_sensors[[2]] <- input_data_sensors$xload <- c(rep(2.5,31),rep(1.5,13))
+input_data_sensors[[3]] <- input_data_sensors$xpace <- c(rep(5,11),rep(10,10),rep(15,23))
+input_data_sensors[[4]] <- input_data_sensors$xgender <- factor(Anthrpmtrc_data$Gender[match(subjects_sensors, Anthrpmtrc_data$`Sub#`)], levels=c("F","M"))
+input_data_sensors[[5]] <- input_data_sensors$xage <- Anthrpmtrc_data$Age[match(subjects_sensors,Anthrpmtrc_data$`Sub#`)]
+input_data_sensors[[6]] <- input_data_sensors$xheight <- Anthrpmtrc_data$`Height (cm)`[match(subjects_sensors,Anthrpmtrc_data$`Sub#`)]
+input_data_sensors[[7]] <- input_data_sensors$xweight <- Anthrpmtrc_data$`Weight (kg)`[match(subjects_sensors,Anthrpmtrc_data$`Sub#`)]
+input_data_sensors[[8]] <- input_data_sensors$xhip <- Anthrpmtrc_data$`Hip circumference (cm)`[match(subjects_sensors,Anthrpmtrc_data$`Sub#`)]
+input_data_sensors[[9]] <- input_data_sensors$xwaist <- Anthrpmtrc_data$`Waist circumference (cm)`[match(subjects_sensors,Anthrpmtrc_data$`Sub#`)]
+
+for (i in 1:27){
+  name = colnames(sensors_total_filtered_df)[(5+i)]
+  df_temp <- sensors_total_filtered_df[,c(2,5,(5+i))] 
+  df_temp <- df_temp %>% pivot_wider(names_from = time, values_from = name)
+  df_temp<- df_temp[order(match(df_temp$sub_con, colnames(y_T_val))),]
+  df_temp = df_temp[,-1]
+  rownames(df_temp) <- colnames(y_T_val)
+  df_temp = as.matrix(df_temp)
+  
+  input_data_sensors[[(9+i)]] <-  input_data_sensors[[name]] <- df_temp
+}
+```
+
+### Modeling
+
+```{r}
+# Below model considers smoothed sensors data in addition to the individual characteristics and task specifications.
+
+model_trunk_sensors <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( trunk_Accelerometer_X )
+                 +s( trunk_Accelerometer_Y )
+                 +s( trunk_Accelerometer_Z )
+                 +s( trunk_Gyroscope_X )
+                 +s( trunk_Gyroscope_Y )
+                 +s( trunk_Gyroscope_Z ),
+                 # +s( trunk_Magnetometer_X )
+                 # +s( trunk_Magnetometer_Y )
+                 # +s( trunk_Magnetometer_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_trunk_sensors)
+```
+
+```{r}
+model_upperarm_sensors <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( upperarm_Accelerometer_X )
+                 +s( upperarm_Accelerometer_Y )
+                 +s( upperarm_Accelerometer_Z )
+                 +s( upperarm_Gyroscope_X )
+                 +s( upperarm_Gyroscope_Y )
+                 +s( upperarm_Gyroscope_Z ),
+                 # +s( upperarm_Magnetometer_X )
+                 # +s( upperarm_Magnetometer_Y )
+                 # +s( upperarm_Magnetometer_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_upperarm_sensors)
+```
+
+```{r}
+model_wrist_sensors <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( wrist_Accelerometer_X )
+                 +s( wrist_Accelerometer_Y )
+                 +s( wrist_Accelerometer_Z )
+                 +s( wrist_Gyroscope_X )
+                 +s( wrist_Gyroscope_Y )
+                 +s( wrist_Gyroscope_Z ),
+                 # +s( wrist_Magnetometer_X )
+                 # +s( wrist_Magnetometer_Y )
+                 # +s( wrist_Magnetometer_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_wrist_sensors)
+```
+
+```{r}
+model_acc_sensors <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( trunk_Accelerometer_X )
+                 +s( trunk_Accelerometer_Y )
+                 +s( trunk_Accelerometer_Z )
+                 +s( upperarm_Accelerometer_X )
+                 +s( upperarm_Accelerometer_Y )
+                 +s( upperarm_Accelerometer_Z )
+                 +s( wrist_Accelerometer_X )
+                 +s( wrist_Accelerometer_Y )
+                 +s( wrist_Accelerometer_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_acc_sensors)
+```
+
+```{r}
+
+#The model with only the functional inputs.
+model_acc2_sensors <- pffr(Y ~
+                 +s( trunk_Accelerometer_X )
+                 +s( trunk_Accelerometer_Y )
+                 +s( trunk_Accelerometer_Z )
+                 +s( upperarm_Accelerometer_X )
+                 +s( upperarm_Accelerometer_Y )
+                 +s( upperarm_Accelerometer_Z )
+                 +s( wrist_Accelerometer_X )
+                 +s( wrist_Accelerometer_Y )
+                 +s( wrist_Accelerometer_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_acc2_sensors)
+```
+
+```{r}
+model_gyr_sensors <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 +s( trunk_Gyroscope_X )
+                 +s( trunk_Gyroscope_Y )
+                 +s( trunk_Gyroscope_Z )
+                 +s( upperarm_Gyroscope_X )
+                 +s( upperarm_Gyroscope_Y )
+                 +s( upperarm_Gyroscope_Z )
+                 +s( wrist_Gyroscope_X )
+                 +s( wrist_Gyroscope_Y )
+                 +s( wrist_Gyroscope_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_gyr_sensors)
+```
+
+```{r}
+#The model with only the functional inputs.
+model_gyr2_sensors <- pffr(Y ~
+                 +s( trunk_Gyroscope_X )
+                 +s( trunk_Gyroscope_Y )
+                 +s( trunk_Gyroscope_Z )
+                 +s( upperarm_Gyroscope_X )
+                 +s( upperarm_Gyroscope_Y )
+                 +s( upperarm_Gyroscope_Z )
+                 +s( wrist_Gyroscope_X )
+                 +s( wrist_Gyroscope_Y )
+                 +s( wrist_Gyroscope_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_gyr2_sensors)
+```
+
+```{r}
+model_accgyrx_sensors <- pffr(Y ~
+                 +s( trunk_Accelerometer_X )
+                 +s( upperarm_Accelerometer_X )
+                 +s( wrist_Accelerometer_X )
+                 +s( trunk_Gyroscope_X )
+                 +s( upperarm_Gyroscope_X )
+                 +s( wrist_Gyroscope_X ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_accgyrx_sensors)
+```
+
+```{r}
+model_accgyry_sensors <- pffr(Y ~
+                 +s( trunk_Accelerometer_Y )
+                 +s( upperarm_Accelerometer_Y )
+                 +s( wrist_Accelerometer_Y )
+                 +s( trunk_Gyroscope_Y )
+                 +s( upperarm_Gyroscope_Y )
+                 +s( wrist_Gyroscope_Y ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_accgyry_sensors)
+```
+
+```{r}
+model_accgyrz_sensors <- pffr(Y ~
+                 +s( trunk_Accelerometer_Z )
+                 +s( upperarm_Accelerometer_Z )
+                 +s( wrist_Accelerometer_Z )
+                 +s( trunk_Gyroscope_Z )
+                 +s( upperarm_Gyroscope_Z )
+                 +s( wrist_Gyroscope_Z ),
+                 data=input_data_sensors, method = "REML", algorithm = "gam")
+
+summary(model_accgyrz_sensors)
+```
+
+## **Downsampling the sensor signals**
+
+```{r}
+#| eval: false
+
+# Define the rate for down-sampling
+sampling_rate = 10
+
+# Define the standard length of a full 45 minute session (45min*60sec*100Hz = 27000)
+standard_length <- 27000
+
+decimate_stdz = function(df, sampling_rate , standard_length){
+  
+  # Define decimate function
+  decimate_func = function(x) {signal::decimate(x, sampling_rate)}
+  
+  # Apply decimate to sensor signals columns and store in separate variables
+  df2 <- lapply(df[,3:11], decimate_func)
+  df2 = data.frame(
+    setNames(df2, names(df)[3:11]))
+  
+  df3 = lapply(df2, function(x) {
+    if (length(x) >= standard_length) {
+      x <- x[1:standard_length]
+    } else if (length(x) < standard_length) {
+      x <- c(x, rep(0, standard_length - length(x)))
+    }
+    return(x)
+  })
+  
+  # Downsample timestamp and id columns separately
+  Timestamp_downsampled <- df$Timestamp[seq(1, nrow(df), sampling_rate)]
+  sub_con_downsampled <- df$sub_con[seq(1, nrow(df), sampling_rate)]
+  
+  # Standardize Timestamp and sub_con
+  if (nrow(df2) >= standard_length) {
+    Timestamp <- Timestamp_downsampled[1:standard_length]
+    sub_con <- sub_con_downsampled[1:standard_length]
+  } else if (nrow(df2) < standard_length) {
+    n_to_add <- standard_length - nrow(df2)
+    Timestamp <- c(Timestamp_downsampled, Timestamp_downsampled[nrow(df2)] + (1/sampling_rate)*(1:n_to_add))
+    sub_con <- c(sub_con_downsampled, rep(sub_con_downsampled[nrow(df2)], standard_length - nrow(df2)))
+  }
+  
+  # Combine the results into a new data frame
+  df3 <- data.frame(
+    Timestamp = Timestamp,
+    sub_con = sub_con,
+    setNames(df3, names(df)[3:11]) # Ensure column names are preserved
+  )
+  
+  list = list(decimate_std_df = df3
+              )
+  return(list)
+}
+
+trunk_total_df_dcmt <- trunk_total_df %>% 
+  dplyr::group_by(sub_con) %>% 
+  dplyr::do(decimate_stdz(. , standard_length = standard_length, sampling_rate = sampling_rate)$decimate_std_df) %>%
+  dplyr::select(!contains('Magnetometer')) %>%
+  dplyr::ungroup()
+
+wrist_total_df_dcmt <- wrist_total_df %>% 
+  dplyr::group_by(sub_con) %>% 
+  dplyr::do(decimate_stdz(. , standard_length = standard_length, sampling_rate = sampling_rate)$decimate_std_df) %>%
+  dplyr::select(!contains('Magnetometer')) %>%
+  dplyr::ungroup()
+  
+upperarm_total_df_dcmt <- upperarm_total_df %>% 
+  dplyr::group_by(sub_con) %>% 
+  dplyr::do(decimate_stdz(. , standard_length = standard_length, sampling_rate = sampling_rate)$decimate_std_df) %>%
+  dplyr::select(!contains('Magnetometer')) %>%
+  dplyr::ungroup()
+
+
+```
+
+## **FPCA on all 30-second windows of the filtered (not downsampled) signals for the 5-minute intervals**
+
+### Input preparation
+
+```{r}
+# Define the pve (portion of variance explained)
+pve = 0.99
+
+
+# The function to prepare the dataframes for the FPCA function and apply the butterworth filter
+
+df_prep_btrwrth = function(df, threshold=15, pve){
+  df %>% 
+    dplyr::select(-contains('Magnetometer')) %>%
+    dplyr::mutate(time= as.POSIXct(df[,1], origin="1970-01-01")) %>%
+    dplyr::mutate_at(3:8,.funs=butter_filter_data) %>%
+    dplyr::group_by(sub_con) %>%
+    dplyr::mutate(time_diff_secs= as.numeric(difftime(time, time[1], units = "secs"))) %>%
+    dplyr::mutate(time_diff_mins= round(as.numeric(difftime(time, time[1], units = "mins")), digits = 0)) %>%
+    dplyr::mutate(max_time_diff_secs = max(time_diff_secs, na.rm = TRUE)) %>%
+    dplyr::mutate(interval = round(time_diff_secs / 300, digits = 0) * 300) %>%
+    dplyr::filter(abs(time_diff_secs - interval) <= threshold | (max_time_diff_secs-time_diff_secs)<=(2*threshold), time_diff_mins<=45)%>%
+    dplyr::mutate(interval = round(time_diff_mins / 5, digits = 0), index = seq(1, length(time))) %>%
+    dplyr::select(-max_time_diff_secs) %>%
+    dplyr::relocate(c(time,time_diff_secs,time_diff_mins,interval, index), .after = Timestamp)
+  }
+  
+# The function to extract the principle components that explain at least up to pve that is specified
+
+get_pcs_30s = function(df, pve) {
+  set.seed(2022)
+    col_names_adj = colnames(y_T_val)[colnames(y_T_val) %in% unique(df$sub_con)]
+    final_result = matrix(1:length(col_names_adj))
+    colnames(final_result) = 'sub_con'
+    for (i in 1:(dim(df)[2]-7)){
+      col = df[,c(6,7,(i+7))]
+      temp_fpc_wide = pivot_wider(col, values_from = colnames(col)[3], names_from = index )
+      temp_fpc_wide = as.data.frame(temp_fpc_wide)
+      row.names(temp_fpc_wide) = temp_fpc_wide$sub_con
+      temp_fpc_wide = temp_fpc_wide[,-1]
+      temp_fpca_pace_model = refund::fpca.face(as.matrix(temp_fpc_wide), pve = pve)
+      result = as.matrix(temp_fpca_pace_model[["scores"]])
+      result <- as.matrix(result[order(match(rownames(result), col_names_adj)),])
+      colnames(result) = paste0(colnames(col)[3],'_','pc',c(1:dim(result)[2]))
+      final_result = cbind(final_result,  result)
+    }
+    final_result = as.data.frame(apply(final_result[,-1],2, as.numeric))
+    rownames(final_result) = col_names_adj
+    return(final_result)
+  }
+
+# Preparing the FPCA inputs for the model
+
+trunk_total_df_pcs_30sec = get_pcs_30s(df_prep_btrwrth(trunk_total_df), pve)
+upperarm_total_df_pcs_30sec = get_pcs_30s(df_prep_btrwrth(upperarm_total_df), pve)
+wrist_total_df_pcs_30sec = get_pcs_30s(df_prep_btrwrth(wrist_total_df), pve)
+
+# Input to the pffr model
+
+input_data_fpca_30sec = input_data_sensors
+input_data_fpca_30sec[10:36] <- NULL
+
+
+for (i in 1:6){
+  column = colnames(trunk_total_df)[(i+2)]
+  df_temp <- trunk_total_df_pcs_30sec %>% dplyr::select(contains(column))
+  df_temp = as.matrix(df_temp)
+  input_data_fpca_30sec[[(9+i)]] <-  input_data_fpca_30sec[[column]] <- df_temp
+}
+
+for (i in 1:6){
+  column = colnames(wrist_total_df)[(i+2)]
+  df_temp <- wrist_total_df_pcs_30sec %>% dplyr::select(contains(column))
+  df_temp <- rbind(df_temp[1:2,],c(rep(1e-6,(dim(df_temp)[2]))),df_temp[3:43,])
+  df_temp = as.matrix(df_temp)
+  rownames(df_temp) = colnames(y_T_val)
+  input_data_fpca_30sec[[(15+i)]] <-  input_data_fpca_30sec[[column]] <- df_temp
+}
+
+for (i in 1:6){
+  column = colnames(upperarm_total_df)[(i+2)]
+  df_temp <- upperarm_total_df_pcs_30sec %>% dplyr::select(contains(column))
+  df_temp = as.matrix(df_temp)
+  input_data_fpca_30sec[[(21+i)]] <-  input_data_fpca_30sec[[column]] <- df_temp
+}
+```
+
+### Modeling
+
+```{r}
+set.seed(2022)
+
+model_acc_pcs_30sec <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                ff( trunk_Accelerometer_X )+
+                ff( trunk_Accelerometer_Y )+
+                ff( trunk_Accelerometer_Z )+
+                ff( upperarm_Accelerometer_X )+
+                ff( upperarm_Accelerometer_Y )+
+                ff( upperarm_Accelerometer_Z )+
+                ff( wrist_Accelerometer_X )+
+                ff( wrist_Accelerometer_Y )+
+                ff( wrist_Accelerometer_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_acc_pcs_30sec)
+```
+
+```{r}
+model_acc2_pcs_30sec <- pffr(Y ~
+                ff( trunk_Accelerometer_X )+
+                ff( trunk_Accelerometer_Y )+
+                ff( trunk_Accelerometer_Z )+
+                ff( upperarm_Accelerometer_X )+
+                ff( upperarm_Accelerometer_Y )+
+                ff( upperarm_Accelerometer_Z )+
+                ff( wrist_Accelerometer_X )+
+                ff( wrist_Accelerometer_Y )+
+                ff( wrist_Accelerometer_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_acc2_pcs_30sec)
+```
+
+```{r}
+model_accgyrx_pcs_30sec <- pffr(Y ~
+                ff( trunk_Accelerometer_X )+
+                ff( upperarm_Accelerometer_X )+
+                ff( wrist_Accelerometer_X )+
+                ff( trunk_Gyroscope_X )+
+                ff( upperarm_Gyroscope_X )+
+                ff( wrist_Gyroscope_X ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_accgyrx_pcs_30sec)
+```
+
+```{r}
+model_accgyry_pcs_30sec <- pffr(Y ~
+                ff( trunk_Accelerometer_Y )+
+                ff( upperarm_Accelerometer_Y )+
+                ff( wrist_Accelerometer_Y )+
+                ff( trunk_Gyroscope_Y )+
+                ff( upperarm_Gyroscope_Y )+
+                ff( wrist_Gyroscope_Y ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_accgyry_pcs_30sec)
+```
+
+```{r}
+model_accgyrz_pcs_30sec <- pffr(Y ~
+                ff( trunk_Accelerometer_Z )+
+                ff( upperarm_Accelerometer_Z )+
+                ff( wrist_Accelerometer_Z )+
+                ff( trunk_Gyroscope_Z )+
+                ff( upperarm_Gyroscope_Z )+
+                ff( wrist_Gyroscope_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_accgyrz_pcs_30sec)
+```
+
+```{r}
+model_gyr_pcs_30sec <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 ff( trunk_Gyroscope_X )+
+                 ff( trunk_Gyroscope_Y )+
+                 ff( trunk_Gyroscope_Z )+
+                 ff( upperarm_Gyroscope_X )+
+                 ff( upperarm_Gyroscope_Y )+
+                 ff( upperarm_Gyroscope_Z )+
+                 ff( wrist_Gyroscope_X )+
+                 ff( wrist_Gyroscope_Y )+
+                 ff( wrist_Gyroscope_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_gyr_pcs_30sec)
+```
+
+```{r}
+model_gyr2_pcs_30sec <- pffr(Y ~
+                 ff( trunk_Gyroscope_X )+
+                 ff( trunk_Gyroscope_Y )+
+                 ff( trunk_Gyroscope_Z )+
+                 ff( upperarm_Gyroscope_X )+
+                 ff( upperarm_Gyroscope_Y )+
+                 ff( upperarm_Gyroscope_Z )+
+                 ff( wrist_Gyroscope_X )+
+                 ff( wrist_Gyroscope_Y )+
+                 ff( wrist_Gyroscope_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_gyr2_pcs_30sec)
+```
+
+```{r}
+model_trunk_pcs_30sec <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 ff( trunk_Accelerometer_X )+
+                 ff( trunk_Accelerometer_Y )+
+                 ff( trunk_Accelerometer_Z )+
+                 ff( trunk_Gyroscope_X )+
+                 ff( trunk_Gyroscope_Y )+
+                 ff( trunk_Gyroscope_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_trunk_pcs_30sec)
+```
+
+```{r}
+model_wrist_pcs_30sec <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 ff( wrist_Accelerometer_X )+
+                 ff( wrist_Accelerometer_Y )+
+                 ff( wrist_Accelerometer_Z )+
+                 ff( wrist_Gyroscope_X )+
+                 ff( wrist_Gyroscope_Y )+
+                 ff( wrist_Gyroscope_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_wrist_pcs_30sec)
+```
+
+```{r}
+model_upperarm_pcs_30sec <- pffr(Y ~
+                 c(xload)  +
+                 c(xpace)  +  
+                 c(xgender)+ 
+                 c(xage)+
+                 c(xheight)+ 
+                 c(xweight)+ 
+                 c(xhip)+ 
+                 c(xwaist)+
+                 ff( upperarm_Accelerometer_X )+
+                 ff( upperarm_Accelerometer_Y )+
+                 ff( upperarm_Accelerometer_Z )+
+                 ff( upperarm_Gyroscope_X )+
+                 ff( upperarm_Gyroscope_Y )+
+                 ff( upperarm_Gyroscope_Z ),
+                 data=input_data_fpca_30sec , method = "REML", algorithm = "gam")
+
+summary(model_upperarm_pcs_30sec)
+```
+
+## Summary of Results For the Functional Models
+
+```{r}
+models <- list(model_1, model_2, model_mad, model_max, model_mean, model_med, model_min, model_Perc25, model_Perc75, model_rms,model_std, model_trunk_sensors, model_upperarm_sensors, model_wrist_sensors,model_acc_sensors,model_gyr_sensors,model_acc2_sensors,model_gyr2_sensors, model_accgyrx_sensors,model_accgyry_sensors,model_accgyrz_sensors,model_acc_pcs_30sec,model_gyr_pcs_30sec,model_trunk_pcs_30sec,model_wrist_pcs_30sec,model_upperarm_pcs_30sec,model_acc2_pcs_30sec,model_gyr2_pcs_30sec, model_accgyrx_pcs_30sec,model_accgyry_pcs_30sec, model_accgyrz_pcs_30sec)
+
+
+#functions
+rsq_adj = function(x) {return(summary(x)$r.sq)}
+rsq = function(x) {return(summary(x)$dev)}
+aic = function(x) {return(x$aic)}
+
+summary_df <- data.frame(
+  Model = c('model_task', 'model_task&prtcpntsChar', 'model_mad', 'model_max', 'model_mean','model_med', 'model_min', 'model_Perc25', 'model_Perc75', 'model_rms','model_std','model_trunk_sensors', 'model_upperarm_sensors', 'model_wrist_sensors','model_acc_sensors','model_gyr_sensors', 'model_acc2_sensors','model_gyr2_sensors', 'model_accgyrx_sensors','model_accgyry_sensors','model_accgyrz_sensors',
+            'model_acc_pcs_30sec','model_gyr_pcs_30sec','model_trunk_pcs_30sec','model_wrist_pcs_30sec','model_upperarm_pcs_30sec', 'model_acc2_pcs_30sec','model_gyr2_pcs_30sec', 'model_accgyrx_pcs_30sec','model_accgyry_pcs_30sec', 'model_accgyrz_pcs_30sec'), 
+  R_squared_adjusted = sapply(models, rsq_adj),
+  R_squared = sapply(models, rsq),
+  AIC = sapply(models, aic)
+) %>% dplyr::arrange(Model)
+  #dplyr::arrange(desc(R_squared_adjusted))
+
+
+# printing the summary of results
+
+DT::datatable(
+  data = summary_df, rownames = F, 
+  extensions = c('Buttons','FixedColumns'),
+  options = list(
+    dom = 'Bfrtip',
+    buttons = c('csv', 'excel', 'pdf', 'print'),
+    paging = TRUE, searching = TRUE, info = FALSE,
+    sort = TRUE, scrollX = TRUE, fixedColumns = list(leftColumns = 1)
+  )
+) %>% 
+  DT::formatRound(
+    columns = c('R_squared_adjusted','R_squared', 'AIC'), 
+    digits = 3)
+```
+
+# Benchmark Models
+
+We employed linear regression to (i) investigate the relationships in question from a cross-sectional perspective, similar to previous literature, and (ii) use these models as benchmarks to assess whether functional regression models are better at explaining the variability in upper extremity fatigue development.
+
+## Input
+
+In the code chunk below, we aggregated the data across all time markers (i.e., over 45 minutes at time 0, 5, ..., 45) for each statistical feature as well as the response variable TRPE.
+
+```{r}
+## Aggregate the data
+agg_df = input_data_nested |>
+    dplyr::mutate(across(-c(1:10), \(x) purrr::map_dbl(x, mean)))
+
+colnames(agg_df)[c(11:65)] = paste0("mean_", colnames(agg_df)[c(11:65)])
+
+DT::datatable(data = agg_df, rownames = F, class = list("display", "compact"), extensions = "FixedColumns",
+    options = list(dom = "Bfrtip", paging = TRUE, info = FALSE, sort = TRUE, scrollX = TRUE,
+        fixedColumns = list(leftColumns = 1))) |>
+    formatRound(digits = 2, columns = c(11:65))
+```
+
+## Modeling
+
+### With only task specifications
+
+```{r}
+lm_task = lm(mean_TRPE ~ xpace + xload, agg_df)
+stargazer(lm_task, type = "html", header = F, single.row = T)
+```
+
+### With only individual characteristics
+
+```{r}
+lm_ind = lm(mean_TRPE ~ xgender + xage + xheight + xweight + xwaist + xhip, agg_df) 
+stargazer(lm_ind, type = "html", header = F, single.row = T)
+```
+
+### Task specifications + individual characteristics
+
+```{r}
+lm_task_ind = lm(mean_TRPE ~ xpace + xload + xgender + xage + xheight + xweight + xwaist + xhip, agg_df)
+
+stargazer(lm_task_ind, type = "html", header = F, single.row = T)
+```
+
+### Adding aggregated features
+
+```{r}
+lm_features = lm(mean_TRPE ~ xpace + xload + xgender + xage + xheight + xweight + xwaist +
+    xhip + mean_Wrist_Acc_Mean + mean_Wrist_Jerk_Mean + mean_Trunk_Acc_Mean + mean_Trunk_Jerk_Mean +
+    mean_Upperarm_Acc_Mean + mean_Upperarm_Jerk_Mean + mean_Wrist_Acc_Std + mean_Wrist_Jerk_Std +
+    mean_Trunk_Acc_Std + mean_Trunk_Jerk_Std + mean_Upperarm_Acc_Std + mean_Upperarm_Jerk_Std,
+    agg_df)
+
+stargazer(lm_features, type = "html", header = F, single.row = T)
+```
+
+# Plotting transformed RPE and sensors' median
+
+```{r plot_TRPE_median, eval=FALSE, include=FALSE}
+
+subjects_plot_sensors = unique(sensors_total_filtered_df$subject)
+conditions_plot_sensors = unique(sensors_total_filtered_df$condition)
+
+for (Sub in 1:length(subjects_plot_sensors))
+{
+  cat('##',paste0("Subject", subjects_plot_sensors[Sub]), "{.tabset .tabset-fade}", '\n')
+  for (Cond in 1:length(conditions_plot_sensors))
+  {
+  cat('###',paste0("Condition ", conditions_plot_sensors[Cond]), "{-}",'\n')
+  parts = c('trunk', 'wrist', 'upperarm')
+  
+  tryCatch({
+  
+  subject = subjects_plot_sensors[Sub]
+  condition = conditions_plot_sensors[Cond]  
+  
+  
+    for (p in 1:length(parts))
+  { 
+    cat('####',parts[p], "{-}",'\n')
+    if (parts[p]=='trunk'){
+      df = sensors_total_filtered_df %>% dplyr::select(-matches('wrist|upperarm'))  
+      df = df[ which(df$sub_con==paste(subject,condition,sep = "-")),]
+    } else if (parts[p]=='wrist') {
+               df = sensors_total_filtered_df %>% dplyr::select(-matches('trunk|upperarm')) 
+               df = df[ which(df$sub_con==paste(subject,condition,sep = "-")),]
+    } else {
+      df = sensors_total_filtered_df %>% dplyr::select(-matches('wrist|trunk')) 
+      df = df[ which(df$sub_con==paste(subject,condition,sep = "-")),]
+    }
+
+    df = df %>% dplyr::select(-contains('Magnetometer')) %>% tidyr::pivot_longer(cols = dplyr::matches(parts[p]),
+               names_to = 'part_sensor_dir',
+               values_to = 'value') %>% tidyr::separate(part_sensor_dir, sep = '_', into = c('part', 'sensor','direction'), remove = F) %>%dplyr::select(-c(Timestamp, subject, condition, part, part_sensor_dir)) 
+    
+    df_X = df %>% dplyr::filter(direction == 'X') 
+    df_Y = df %>% dplyr::filter(direction == 'Y')
+    df_Z = df %>% dplyr::filter(direction == 'Z')
+  
+  df_X$time = as.integer(df_X$time)
+  df_Y$time = as.integer(df_Y$time)
+  df_Z$time = as.integer(df_Z$time)
+  
+  Plot_X = ggplot(data = df_X, aes(x = time, y = value , group = direction)) +
+  geom_line() +
+  geom_point()+ 
+  facet_grid( sensor~direction , scales = "free") +
+  ggtitle(parts[p])+  
+  scale_color_grey()+
+  ggplot2::labs(
+    x = 'Time', y = 'value',
+    title = str_wrap(paste('Median of Smooth Sensor Signals for Subject ',
+                  subject, 'and Condition ', condition, 'for the sensor attatched to the', parts[p]), width = 150),
+    subtitle = str_wrap('Dots in the accelerometer and gyroscope plots show median values for 15 seconds before and after each 5 minute time interval.', width=150)
+  ) +
+  ggplot2::theme_bw(base_size = 16) +
+  ggplot2::theme(legend.position = 'bottom', axis.title.x = element_blank()) +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     plot.subtitle = ggplot2::element_text(size = 16),  # Increase subtitle size
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  Plot_Y = ggplot(data = df_Y, aes(x = time, y = value , group = direction)) +
+  geom_line() +
+  geom_point()+ 
+  facet_grid( sensor~direction , scales = "free") +
+  scale_color_grey()+
+  ggplot2::labs(x = 'Time') +
+  ggplot2::theme_bw(base_size = 16) +
+  ggplot2::theme(axis.title.y = element_blank()) +
+  ggplot2::guides( color = guide_legend(nrow=1, byrow = T))+
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     plot.subtitle = ggplot2::element_text(size = 16),  # Increase subtitle size
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  Plot_Z = ggplot(data = df_Z, aes(x = time, y = value)) +
+  geom_line() +
+  geom_point() +
+  facet_grid( sensor~direction , scales = "free")+
+  scale_color_grey()+
+  ggplot2::theme_bw(base_size = 16) +
+  ggplot2::theme(
+    axis.title.x = element_blank(),axis.title.y = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     plot.subtitle = ggplot2::element_text(size = 16),  # Increase subtitle size
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  Plot_all = egg::ggarrange(Plot_X, ggplot() + theme_void(), Plot_Y,  ggplot() + theme_void(), Plot_Z, nrow = 1, widths  = c(1,-0.03,1,-0.03,1))
+  
+  ggplot2::ggsave(filename = paste0("median_figs/", 'Median_subject', subject,'_condition ', condition, '_', parts[p],'.png'),
+                  plot = Plot_all,
+                  dpi = 600, width = 16, height = 6)
+  
+  print(Plot_all)
+  
+  cat('\n \n')
+  
+  }
+  }, error = function(e) {})
+  
+cat('\n \n')
+  }
+cat('\n \n')
+}
+
+```
+
+# Plotting the decimated signals {.tabset .tabset-fade .tabset-pills}
+
+```{r plotdcmt, eval=FALSE, include=FALSE, results='asis'}
+
+
+for (Sub in 1:length(subjects_plot_sensors))
+{
+  cat('##',paste0("Subject", subjects_plot_sensors[Sub]), "{.tabset .tabset-fade}", '\n')
+  for (Cond in 1:length(conditions_plot_sensors))
+  {
+  cat('###',paste0("Condition ", conditions_plot_sensors[Cond]), "{-}",'\n')
+  parts = c('trunk', 'upperarm', 'wrist')
+  
+  tryCatch({
+  
+  subject = subjects_plot_sensors[Sub]
+  condition = conditions_plot_sensors[Cond]  
+  
+  
+    for (p in 1:length(parts))
+  {
+      cat('####',parts[p], "{-}",'\n')
+      if (parts[p]=='trunk'){
+        df = trunk_total_df_dcmt %>% dplyr::filter(sub_con == paste(subject,condition,sep = "-"))
+        df_filtered = trunk_total_filtered_df[which(trunk_total_filtered_df$sub_con == paste(subject,condition,sep = "-")),-(12:14)]
+      } else if (parts[p]=='wrist') {
+                 df = wrist_total_df_dcmt%>% dplyr::filter(sub_con == paste(subject,condition,sep = "-"))
+                 df_filtered = wrist_total_filtered_df[which(wrist_total_filtered_df$sub_con == paste(subject,condition,sep = "-")),-(12:14)]
+      } else {
+        df = upperarm_total_df_dcmt%>% dplyr::filter(sub_con == paste(subject,condition,sep = "-"))
+        df_filtered = upperarm_total_filtered_df[which(upperarm_total_filtered_df$sub_con == paste(subject,condition,sep = "-")),-(12:14)]
+      }
+  
+      df = df %>% tidyr::pivot_longer(cols = dplyr::contains(parts[p]),
+                 names_to = 'part_sensor_dir',
+                 values_to = 'value')  %>% 
+    tidyr::separate(part_sensor_dir, sep = '_', into = c('part', 'sensor','direction'), remove = F) %>% dplyr::mutate(type = paste(direction,c('sensor'), sep = "_"))
+    
+      df_filtered = df_filtered %>% tidyr::pivot_longer(cols = dplyr::contains(parts[p]),
+                 names_to = 'part_sensor_dir',
+                 values_to = 'value')  %>% 
+    tidyr::separate(part_sensor_dir, sep = '_', into = c('part', 'sensor','direction'), remove = F) %>% dplyr::mutate(type = paste(direction,c('median'), sep = "_")) #%>% dplyr::filter(time!=45)
+    
+    df_X = df %>% dplyr::filter(direction == 'X') 
+    df_Y = df %>% dplyr::filter(direction == 'Y')
+    df_Z = df %>% dplyr::filter(direction == 'Z')
+
+    df_filtered_X = df_filtered  %>% dplyr::filter(direction == 'X')
+    df_filtered_Y = df_filtered  %>% dplyr::filter(direction == 'Y')
+    df_filtered_Z = df_filtered %>% dplyr::filter(direction == 'Z')
+     
+    
+  plot_df_X = df_X %>% dplyr::bind_rows(df_filtered_X[,c(1,5:11)]) 
+  plot_df_Y = df_Y %>% dplyr::bind_rows(df_filtered_Y[,c(1,5:11)])
+  plot_df_Z = df_Z %>% dplyr::bind_rows(df_filtered_Z[,c(1,5:11)])
+  
+  plot_df_X$Timestamp = as.integer(plot_df_X$Timestamp)
+  plot_df_Y$Timestamp = as.integer(plot_df_Y$Timestamp)
+  plot_df_Z$Timestamp = as.integer(plot_df_Z$Timestamp)
+  
+  
+  Plot_X_sensors = ggplot(data = plot_df_X, aes(x = Timestamp, y = value)) +
+  #geom_line(aes(alpha=0.05)) +
+  geom_point(aes(size = ifelse((type=='X_sensor'), 0.1, 3), alpha = ifelse((type=='X_sensor'), 0.05, 1))) +
+  scale_size_identity() +
+  facet_grid(sensor~direction, scales = "free") +
+  scale_color_grey()+
+  ggplot2::labs(
+    x = 'Time', y = 'Downsampled Signals Amplitude',
+    title = str_wrap(paste('Smooth Downsampled Sensor Signals for Subject ',
+                  subject, 'and Condition ', condition, "for the sensor attatched to the", parts[p]), width=200),
+    subtitle = str_wrap('The bigger ots show median values for 15 seconds before and after each 5 minute time interval, and the smaller dots show smoothed downsampled sensor signals in three different directions.', width=150),
+  ) +
+  ggplot2::guides( color = F, alpha = F)+
+  ggplot2::theme_bw(base_size = 18) +
+  ggplot2::theme(legend.position = 'bottom', axis.title.x = element_blank()) +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     plot.subtitle = ggplot2::element_text(size = 18),  # Increase subtitle size
+     axis.title = ggplot2::element_text(size = 18),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 18) # Increase axis text size
+  )
+  
+  Plot_Y_sensors = ggplot(data = plot_df_Y, aes(x = Timestamp, y = value)) +
+  #geom_line(aes(alpha=0.05)) +
+  geom_point(aes(size = ifelse((type=='Y_sensor'), 0.1, 3), alpha = ifelse((type=='Y_sensor'), 0.05, 1))) +
+  scale_size_identity() +
+  facet_grid(sensor~direction, scales = "free") +
+  scale_color_grey()+
+  ggplot2::labs(
+    x = 'Time', y = 'Downsampled Signals Amplitude') +
+  ggplot2::guides( color = F, alpha = F)+
+  ggplot2::theme_bw(base_size = 18) +
+  ggplot2::theme(legend.position = 'bottom', axis.title.y = element_blank()) +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     plot.subtitle = ggplot2::element_text(size = 18),  # Increase subtitle size
+     axis.title = ggplot2::element_text(size = 18),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 18) # Increase axis text size
+  )
+  
+  Plot_Z_sensors = ggplot(data = plot_df_Z, aes(x = Timestamp, y = value)) +
+  #geom_line(aes(alpha=0.05)) +
+  geom_point(aes(size = ifelse((type=='Z_sensor'), 0.1, 3), alpha = ifelse((type=='Z_sensor'), 0.05, 1))) +
+  scale_size_identity() +
+  facet_grid(sensor~direction, scales = "free") +
+  scale_color_grey()+
+  ggplot2::labs(
+    x = 'Time', y = 'Downsampled Signals Amplitude') +
+  ggplot2::guides( color = F, alpha = F)+
+  ggplot2::theme_bw(base_size = 18) +
+  ggplot2::theme(legend.position = 'bottom', axis.title.x = element_blank(), axis.title.y = element_blank()) +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     plot.subtitle = ggplot2::element_text(size = 18),  # Increase subtitle size
+     axis.title = ggplot2::element_text(size = 18),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 18) # Increase axis text size
+  )
+    
+  Plot_all_sensors = egg::ggarrange(Plot_X_sensors, ggplot() + theme_void(), Plot_Y_sensors,  ggplot() + theme_void(), Plot_Z_sensors, nrow = 1, widths  = c(1,-0.02,1,-0.02,1))
+  
+  ggplot2::ggsave(filename = paste0("decimated signals and medians_figs/", 'dcmt_signals_subject ', subject,'_condition ', condition, '_', parts[p],'.png'),
+                  plot = Plot_all_sensors,
+                  dpi = 600, width = 20, height = 10)  
+    
+    print(Plot_all_sensors)
+    
+    cat('\n \n')
+    #}
+  }
+}, error = function(e) {})
+  
+cat('\n \n')
+  }
+cat('\n \n')
+}
+
+
+```
+
+# Plotting a slice of decimated signals for subject 9 and condition 2.5-15 {.tabset .tabset-fade .tabset-pills}
+
+```{r plotdcmtslc, eval=FALSE, include=FALSE, results='asis'}
+
+parts = 'trunk'
+subject = subjects_plot_sensors[9]
+condition = conditions_plot_sensors[1]  
+  
+df = trunk_total_df_dcmt %>% dplyr::filter(sub_con == paste(subject,condition,sep = "-"))
+df_filtered = trunk_total_filtered_df[which(trunk_total_filtered_df$sub_con == paste(subject,condition,sep = "-")),-(12:14)]
+      
+df = df %>% tidyr::pivot_longer(cols = dplyr::contains(parts[p]),
+           names_to = 'part_sensor_dir',
+           values_to = 'value')  %>% 
+tidyr::separate(part_sensor_dir, sep = '_', into = c('part', 'sensor','direction'), remove = F) %>% dplyr::mutate(type = paste(direction,c('sensor'), sep = "_"))
+
+df_filtered = df_filtered %>% tidyr::pivot_longer(cols = dplyr::contains(parts[p]),
+           names_to = 'part_sensor_dir',
+           values_to = 'value')  %>% 
+tidyr::separate(part_sensor_dir, sep = '_', into = c('part', 'sensor','direction'), remove = F) %>% dplyr::mutate(type = paste(direction,c('median'), sep = "_")) #%>% dplyr::filter(time!=45)
+
+timestamp_40 = '1640800639'
+df_Z = df %>% 
+  dplyr::filter(direction == 'Z') %>% 
+  dplyr::filter( abs(Timestamp - as.numeric(timestamp_40)) <= 15 )
+
+df_filtered_Z = df_filtered  %>% 
+  dplyr::filter(direction == 'Z') %>% 
+  dplyr::filter(Timestamp == timestamp_40)
+
+plot_df_Z = df_Z %>% 
+  dplyr::bind_rows(df_filtered_Z[,c(1,5:11)])
+  
+plot_df_Z$Timestamp = as.integer(plot_df_Z$Timestamp)
+
+Plot_Z_sensors = ggplot(data = plot_df_Z, aes(x = Timestamp, y = value)) +
+#geom_line(aes(alpha=0.05)) +
+geom_point(aes(size = ifelse((type=='Z_sensor'), 0.8, 1.3), alpha = ifelse((type=='Z_sensor'), 0.95, 1))) +
+scale_size_identity() +
+facet_grid(sensor~direction, scales = "free") +
+scale_color_grey()+
+ggplot2::labs(
+  x = 'Time', y = 'Downsampled Signals Amplitude',
+  title = str_wrap(paste('Smooth downsampled sensor signals for subject ',
+                subject, 'and condition ', condition, "for the sensor attached to the", parts[p]), width=150),
+  subtitle = str_wrap('The black dot is the median of 15 seconds before and after  the 40th minute of the sensor signals in Z direction. The sensor signals have been downsampled to 10 HZ for clearer visualization.', width=140),
+) +
+ggplot2::guides( color = F, alpha = F)+
+ggplot2::theme_bw(base_size = 16) +
+ggplot2::theme(legend.position = 'bottom') +
+ggplot2::theme(
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank()
+)+
+ggplot2::theme(
+   plot.subtitle = ggplot2::element_text(size = 16),  # Increase subtitle size
+   axis.title = ggplot2::element_text(size = 16),  # Increase axis label size
+   axis.text = ggplot2::element_text(size = 16) # Increase axis text size
+)
+  
+  
+ggplot2::ggsave(filename = paste0("decimated signals and medians_figs/", 'sliced_dcmt_signals_subject ', subject,'_condition ', condition, '_', 'trunk','.png'),
+              plot = Plot_Z_sensors,
+              dpi = 600, width = 15, height = 6)  
+
+print(Plot_Z_sensors)
+
+```
+
+# Check the correlation between the scalar inputs and the PCs from the 30-second intervals
+
+```{r corr, echo=TRUE, results='asis'}
+# The canonical correlation using cca.fd::fda
+
+smooth_functional_var = function(nbasis, var){
+  ncol=dim(var)[2]
+  basis_var <- fda::create.bspline.basis(c(0,ncol), nbasis= nbasis)
+  smooth_var <- fda::smooth.basis(argvals = seq(0,ncol, length.out = dim(t(var))[1]), y = t(var), fdParobj = basis_var)$fd
+  list = list(basis = basis_var,
+              smooth_var = smooth_var)
+  return(list)
+  }
+
+# change the format of acceleration PCs to a fd object
+trunk_AccX_fd = smooth_functional_var(dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2],input_data_fpca_30sec$trunk_Accelerometer_X)$smooth_var
+trunk_AccY_fd = smooth_functional_var(dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2],input_data_fpca_30sec$trunk_Accelerometer_Y)$smooth_var
+trunk_AccZ_fd = smooth_functional_var(dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2],input_data_fpca_30sec$trunk_Accelerometer_Z)$smooth_var
+wrist_AccX_fd = smooth_functional_var(dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2],input_data_fpca_30sec$wrist_Accelerometer_X)$smooth_var
+wrist_AccY_fd = smooth_functional_var(dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2],input_data_fpca_30sec$wrist_Accelerometer_Y)$smooth_var
+wrist_AccZ_fd = smooth_functional_var(dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2],input_data_fpca_30sec$wrist_Accelerometer_Z)$smooth_var
+upperarm_AccX_fd = smooth_functional_var(dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2],input_data_fpca_30sec$upperarm_Accelerometer_X)$smooth_var
+upperarm_AccY_fd = smooth_functional_var(dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2],input_data_fpca_30sec$upperarm_Accelerometer_Y)$smooth_var
+upperarm_AccZ_fd = smooth_functional_var(dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2],input_data_fpca_30sec$upperarm_Accelerometer_Z)$smooth_var
+
+# change the format of scalar inputs to an fd object (considering replicates of them over 4 points)
+
+load_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xload,4),nrow=44,ncol=4))$smooth_var
+pace_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xpace,4),nrow=44,ncol=4))$smooth_var
+height_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xheight,4),nrow=44,ncol=4))$smooth_var
+weight_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xweight,4),nrow=44,ncol=4))$smooth_var
+age_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xage,4),nrow=44,ncol=4))$smooth_var
+hip_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xhip,4),nrow=44,ncol=4))$smooth_var
+waist_fd = smooth_functional_var(4,matrix(data=rep(input_data_fpca_30sec$xwaist,4),nrow=44,ncol=4))$smooth_var
+# gender couldn't be changed to a functional variable as it is not numeric. May be we can replace the factors with numbers?
+
+# finding the correlation using the fda::cor.fd
+
+##for Trunk_acc_x
+
+  
+  corfd_load_trunkACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2]), trunk_AccX_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_trunkACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2]), trunk_AccX_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_trunkACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2]), trunk_AccX_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_trunkACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2]), trunk_AccX_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_trunkACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2]), trunk_AccX_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_trunkACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2]), trunk_AccX_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$trunk_Accelerometer_X)[2],1)
+  trunkACCX_corfd_summary = data.frame(PC_no,corfd_load_trunkACCX, corfd_pace_trunkACCX, corfd_height_trunkACCX, corfd_weight_trunkACCX, corfd_hip_trunkACCX, corfd_waist_trunkACCX )
+  trunkACCX_corfd_summary_long = pivot_longer(trunkACCX_corfd_summary, cols = contains('trunkACCX') ,names_to = 'factors', values_to = 'corr_value')
+  
+  
+  trunkACCX_corfd_plot = ggplot(data=trunkACCX_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of trunk ACC on X direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+ print(trunkACCX_corfd_plot)
+  
+  ##for Trunk_acc_y
+  
+  corfd_load_trunkACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2]), trunk_AccY_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_trunkACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2]), trunk_AccY_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_trunkACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2]), trunk_AccY_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_trunkACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2]), trunk_AccY_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_trunkACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2]), trunk_AccY_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_trunkACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2]), trunk_AccY_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$trunk_Accelerometer_Y)[2],1)
+  trunkACCY_corfd_summary = data.frame(PC_no,corfd_load_trunkACCY, corfd_pace_trunkACCY, corfd_height_trunkACCY, corfd_weight_trunkACCY, corfd_hip_trunkACCY, corfd_waist_trunkACCY )
+  trunkACCY_corfd_summary_long = pivot_longer(trunkACCY_corfd_summary, cols = contains('trunkACCY') ,names_to = 'factors', values_to = 'corr_value')
+  
+  
+  trunkACCY_corfd_plot = ggplot(data=trunkACCY_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of trunk ACC on Y direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  print(trunkACCY_corfd_plot)
+  
+ ##for Trunk_acc_z
+  
+  corfd_load_trunkACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2]), trunk_AccZ_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_trunkACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2]), trunk_AccZ_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_trunkACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2]), trunk_AccZ_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_trunkACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2]), trunk_AccZ_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_trunkACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2]), trunk_AccZ_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_trunkACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2]), trunk_AccZ_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$trunk_Accelerometer_Z)[2],1)
+  trunkACCZ_corfd_summary = data.frame(PC_no,corfd_load_trunkACCZ, corfd_pace_trunkACCZ, corfd_height_trunkACCZ, corfd_weight_trunkACCZ, corfd_hip_trunkACCZ, corfd_waist_trunkACCZ )
+  trunkACCZ_corfd_summary_long = pivot_longer(trunkACCZ_corfd_summary, cols = contains('trunkACCZ') ,names_to = 'factors', values_to = 'corr_value')
+  
+  
+  trunkACCZ_corfd_plot = ggplot(data=trunkACCZ_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of trunk ACC on Z direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  print(trunkACCZ_corfd_plot)
+
+  ##for Wrist_acc_x
+  
+  corfd_load_wristACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2]), wrist_AccX_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_wristACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2]), wrist_AccX_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_wristACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2]), wrist_AccX_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_wristACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2]), wrist_AccX_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_wristACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2]), wrist_AccX_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_wristACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2]), wrist_AccX_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$wrist_Accelerometer_X)[2],1)
+  wristACCX_corfd_summary = data.frame(PC_no,corfd_load_wristACCX, corfd_pace_wristACCX, corfd_height_wristACCX, corfd_weight_wristACCX, corfd_hip_wristACCX, corfd_waist_wristACCX )
+  wristACCX_corfd_summary_long = pivot_longer(wristACCX_corfd_summary, cols = contains('wristACCX') ,names_to = 'factors', values_to = 'corr_value')
+  
+  wristACCX_corfd_plot = ggplot(data=wristACCX_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of wrist ACC on X direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  print(wristACCX_corfd_plot)
+  
+  ##for Wrist_acc_y
+  
+  corfd_load_wristACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2]), wrist_AccY_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_wristACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2]), wrist_AccY_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_wristACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2]), wrist_AccY_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_wristACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2]), wrist_AccY_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_wristACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2]), wrist_AccY_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_wristACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2]), wrist_AccY_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$wrist_Accelerometer_Y)[2],1)
+  wristACCY_corfd_summary = data.frame(PC_no,corfd_load_wristACCY, corfd_pace_wristACCY, corfd_height_wristACCY, corfd_weight_wristACCY, corfd_hip_wristACCY, corfd_waist_wristACCY )
+  wristACCY_corfd_summary_long = pivot_longer(wristACCY_corfd_summary, cols = contains('wristACCY') ,names_to = 'factors', values_to = 'corr_value')
+  
+  wristACCY_corfd_plot = ggplot(data=wristACCY_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of wrist ACC on Y direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+   print(wristACCY_corfd_plot)
+  
+ ##for Wrist_acc_z
+  
+  corfd_load_wristACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2]), wrist_AccZ_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_wristACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2]), wrist_AccZ_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_wristACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2]), wrist_AccZ_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_wristACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2]), wrist_AccZ_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_wristACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2]), wrist_AccZ_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_wristACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2]), wrist_AccZ_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$wrist_Accelerometer_Z)[2],1)
+  wristACCZ_corfd_summary = data.frame(PC_no,corfd_load_wristACCZ, corfd_pace_wristACCZ, corfd_height_wristACCZ, corfd_weight_wristACCZ, corfd_hip_wristACCZ, corfd_waist_wristACCZ )
+  wristACCZ_corfd_summary_long = pivot_longer(wristACCZ_corfd_summary, cols = contains('wristACCZ') ,names_to = 'factors', values_to = 'corr_value')
+  
+  wristACCZ_corfd_plot = ggplot(data=wristACCZ_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of wrist ACC on Z direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  ) 
+  
+  print(wristACCZ_corfd_plot)
+
+##for Upperarm_acc_x
+  
+  corfd_load_upperarmACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2]), upperarm_AccX_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_upperarmACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2]), upperarm_AccX_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_upperarmACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2]), upperarm_AccX_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_upperarmACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2]), upperarm_AccX_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_upperarmACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2]), upperarm_AccX_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_upperarmACCX <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2]), upperarm_AccX_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$upperarm_Accelerometer_X)[2],1)
+  upperarmACCX_corfd_summary = data.frame(PC_no,corfd_load_upperarmACCX, corfd_pace_upperarmACCX, corfd_height_upperarmACCX, corfd_weight_upperarmACCX, corfd_hip_upperarmACCX, corfd_waist_upperarmACCX )
+  upperarmACCX_corfd_summary_long = pivot_longer(upperarmACCX_corfd_summary, cols = contains('upperarmACCX') ,names_to = 'factors', values_to = 'corr_value')
+  
+  upperarmACCX_corfd_plot = ggplot(data=upperarmACCX_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of upperarm ACC on X direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  print(upperarmACCX_corfd_plot)
+  
+  ##for Upperarm_acc_y
+  
+  corfd_load_upperarmACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2]), upperarm_AccY_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_upperarmACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2]), upperarm_AccY_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_upperarmACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2]), upperarm_AccY_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_upperarmACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2]), upperarm_AccY_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_upperarmACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2]), upperarm_AccY_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_upperarmACCY <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2]), upperarm_AccY_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$upperarm_Accelerometer_Y)[2],1)
+  upperarmACCY_corfd_summary = data.frame(PC_no,corfd_load_upperarmACCY, corfd_pace_upperarmACCY, corfd_height_upperarmACCY, corfd_weight_upperarmACCY, corfd_hip_upperarmACCY, corfd_waist_upperarmACCY )
+  upperarmACCY_corfd_summary_long = pivot_longer(upperarmACCY_corfd_summary, cols = contains('upperarmACCY') ,names_to = 'factors', values_to = 'corr_value')
+  
+  upperarmACCY_corfd_plot = ggplot(data=upperarmACCY_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of upperarm ACC on Y direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+  
+  print(upperarmACCY_corfd_plot)
+ 
+  ##for Upperarm_acc_z
+  
+  corfd_load_upperarmACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2]), upperarm_AccZ_fd,
+  seq(0, 4, length=4), load_fd)[,1]
+  corfd_pace_upperarmACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2]), upperarm_AccZ_fd,
+  seq(0, 4, length=4), pace_fd)[,1]
+  corfd_height_upperarmACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2]), upperarm_AccZ_fd,
+  seq(0, 4, length=4), height_fd)[,1]
+  corfd_weight_upperarmACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2]), upperarm_AccZ_fd,
+  seq(0, 4, length=4), weight_fd)[,1]
+  corfd_hip_upperarmACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2]), upperarm_AccZ_fd,
+  seq(0, 4, length=4), hip_fd)[,1]
+  corfd_waist_upperarmACCZ <- fda::cor.fd(seq(0, dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2], length=dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2]), upperarm_AccZ_fd,
+  seq(0, 4, length=4), waist_fd)[,1]
+  PC_no = seq(1,dim(input_data_fpca_30sec$upperarm_Accelerometer_Z)[2],1)
+  upperarmACCZ_corfd_summary = data.frame(PC_no,corfd_load_upperarmACCZ, corfd_pace_upperarmACCZ, corfd_height_upperarmACCZ, corfd_weight_upperarmACCZ, corfd_hip_upperarmACCZ, corfd_waist_upperarmACCZ )
+  upperarmACCZ_corfd_summary_long = pivot_longer(upperarmACCZ_corfd_summary, cols = contains('upperarmACCZ') ,names_to = 'factors', values_to = 'corr_value')
+  
+  upperarmACCZ_corfd_plot = ggplot(data=upperarmACCZ_corfd_summary_long, aes(x= PC_no, y= corr_value))+
+  geom_line() +
+  geom_point()+ 
+    facet_wrap(~factors, ncol =3)+
+  ggtitle('Correlation coefficients of different factors and PCs of upperarm ACC on Z direction')+ 
+  ggplot2::labs(
+    x = 'PCs', y = 'Correlation value') +
+  ggplot2::theme(legend.position = 'bottom') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )  
+
+print(upperarmACCZ_corfd_plot)
+  
+```
+
+# Showing all the plots of correlation coefficients of Acc signal vs. scalar inputs {.tabset}
+
+```{r corr_plots, echo=TRUE, results='asis'}
+
+corr_plots_list = c('trunkACCX_corfd_plot','trunkACCY_corfd_plot', 'trunkACCZ_corfd_plot','wristACCX_corfd_plot','wristACCY_corfd_plot', 'wristACCZ_corfd_plot','upperarmACCX_corfd_plot','upperarmACCY_corfd_plot', 'upperarmACCZ_corfd_plot')
+
+for (i in 1:length(corr_plots_list)){
+  cat('\n')
+  cat('##', corr_plots_list[i],'\n')
+  cat('\n')
+   
+  print(get(corr_plots_list[i]))
+  
+  cat('\n')
+}
+
+```
+
+# Plotting FPCs for Upperarm on X axis
+
+```{r FPCs_plots, echo=TRUE, results='asis'}
+
+df_ACCX_upperarm_2.5_15 = upperarm_total_df_pcs_30sec %>% 
+  dplyr::select(contains("Accelerometer_X"))%>%
+  dplyr::mutate(sub_con = rownames(upperarm_total_df_pcs_30sec)) %>%
+  pivot_longer(cols = contains('upperarm') ,names_to = 'PCs', values_to = 'FPCs_Values') %>%
+  dplyr::mutate(PCs = str_replace(PCs, ".*upperarm_Accelerometer_X_pc", "")) %>%
+  dplyr::filter(str_detect(sub_con,'2.5-15'))
+df_ACCX_upperarm_2.5_15$PCs = as.integer(df_ACCX_upperarm_2.5_15$PCs)
+
+upperarmACCX_FPCs_plot = ggplot(data=df_ACCX_upperarm_2.5_15, aes(x= PCs, y= FPCs_Values, group= sub_con))+
+  geom_line() +
+  geom_point()+ 
+  facet_wrap(~sub_con, ncol =3, scales = "free")+
+  ggtitle('FPCs of upperarm ACC on X direction for condition 2.5 kg load and 15 bpm pace')+ 
+  #scale_color_grey()+
+  ggplot2::labs(
+    x = 'PCs', y = 'FPCs Scores') +
+  ggplot2::theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )+
+  scale_x_continuous(breaks = seq(0, 12, by = 2))+
+  ggplot2::theme(
+     axis.title = ggplot2::element_text(size = 14),  # Increase axis label size
+     axis.text = ggplot2::element_text(size = 14) # Increase axis text size
+  )
+
+print(upperarmACCX_FPCs_plot)
+```

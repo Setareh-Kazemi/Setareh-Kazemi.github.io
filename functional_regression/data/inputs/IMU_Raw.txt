@@ -1,1 +1,3 @@
-The link to the raw IMU signals: https://drive.google.com/file/d/1UcCC6rca--H7lEa64GV6b5vbfBa46Hyt/view?usp=sharing
+The link to the raw IMU signals: 
+Google Drive: https://drive.google.com/file/d/1UcCC6rca--H7lEa64GV6b5vbfBa46Hyt/view?usp=sharing
+Figshare: https://figshare.com/s/c6c4dd74bdd29e4cb5a3

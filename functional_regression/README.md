@@ -62,5 +62,5 @@ In the [**data**](data) folder, there is an [**input**](input) folder which incl
 ---
 ## Codes and Results: 
 
-The codes related to all analyses represented in this study can be found in the ['functional_regression_final_SK.qmd'](functional_regression_final_SK.qmd) file which can be opened and rendered in R Studio after the data files are stored in a local directory same as this file. The plots and figures related to different parts of this analysis can be found in the [**figs**](figs) folder.
+The codes related to all analyses represented in this study can be found in the ['functional_regression_final_SK.qmd'](functional_regression_final_SK.qmd) file which can be opened and rendered in R Studio after the data files are stored in a local directory same as this file. The rendered HTML file is also provided in ['functional_regression_final_SK.html](functional_regression_final_sk.html). The plots and figures related to different parts of this analysis can be found in the [**figs**](figs) folder.
 

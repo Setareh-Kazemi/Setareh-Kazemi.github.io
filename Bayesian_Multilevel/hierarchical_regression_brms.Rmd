@@ -1,0 +1,1403 @@
+---
+title: "A Hierarchical Bayesian Modeling Approach to Predict Upper Extremities' Fatigue in a Dynamic Order-Picking Task"
+author:
+- name: "Setareh Kazemi Kheiri ^[Email: skazemik@buffalo.edu]"
+  affiliation: Department of Industrial and Systems Engineering, University at Buffalo
+  
+- name: "Hongyue Sun ^[Email: hongyuesun@uga.edu | Phone: +1-706-542-2329 | Website: <a href=\"https://engineering.uga.edu/team_member/hongyue-sun\">University  of Georgia Official</a> ]"
+  affiliation: College of Engineering, University of Georgia
+    
+- name: "Fadel Megahed ^[Email: megahefm@miamioh.edu | Phone: +1-513-529-4185 | Website: <a href=\"https://miamioh.edu/fsb/directory/?up=/directory/megahefm\">Miami University Official</a> ]"
+  affiliation: Farmer School of Business, Miami University
+    
+- name: "Lora Cavuoto ^[Email: loracavu@buffalo.edu | Phone: +1-716-645-4696 | Website: <a href=\"https://engineering.buffalo.edu/home/research/faculty/profiles.host.html/content/shared/engineering/industrial-systems/profiles/faculty/cavuoto-lora.html\">University at Buffalo Official</a> ]"
+  affiliation: Department of Industrial and Systems Engineering, University at Buffalo
+
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: refs.bib
+link-citations: true
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{chngpage}
+  - \usepackage{caption}
+  - \usepackage{chngpage}
+  - \usepackage{color}
+  - \usepackage[autostyle=true,english=american]{csquotes}
+  - \usepackage{csvsimple}
+  - \usepackage{framed}
+  - \usepackage{graphicx}
+  - \usepackage{hyperref}
+  - \usepackage{lineno}
+  - \usepackage{lscape}
+  - \usepackage{mathptmx}
+  - \usepackage{mathrsfs}
+  - \usepackage{makecell}
+  - \usepackage{mathtools}
+  - \usepackage{media9}
+  - \usepackage{multicol}
+  - \usepackage{multirow}
+  - \usepackage{secdot}
+  - \usepackage{sectsty}
+  - \usepackage{setspace}
+  - \usepackage{subcaption}
+  - \usepackage{tabulary}
+  - \usepackage{titlesec}
+  - \usepackage[colorinlistoftodos]{todonotes}
+  - \usepackage{url}
+
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    code_folding: show
+---
+
+# R Setup and Required Packages
+
+In this project, the open-source `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language is used for our analysis. `r fontawesome::fa(name = "r-project", fill = "steelblue")` is maintained by an international team of developers who make the language available at [The Comprehensive R Archive Network](https://cran.r-project.org/). Readers interested in reusing our code and reproducing our results should have `r fontawesome::fa(name = "r-project", fill = "steelblue")` installed locally on their machines. `r fontawesome::fa(name = "r-project", fill = "steelblue")` can be installed on a number of different operating systems (see [Windows](https://cran.r-project.org/bin/windows/), [Mac](https://cran.r-project.org/bin/macosx/), and [Linux](https://cran.r-project.org/bin/linux/) for the installation instructions for these systems). We also recommend using the RStudio interface for `r fontawesome::fa(name = "r-project", fill = "steelblue")`. The reader can [download RStudio](http://www.rstudio.com/ide) for free by following the instructions at the link. For non-R users, we recommend the [Hands-on Programming with R](https://rstudio-education.github.io/hopr/packages.html) for a brief overview of the software's functionality. Hereafter, we assume that the reader has an introductory understanding of the `r fontawesome::fa(name = "r-project", fill = "steelblue")` programming language.
+
+```{r setup, include=FALSE}
+#| label: setup
+
+#| warning: false
+
+#| message: false
+
+
+
+# Setting the random seed and chunk dependencies
+
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, cache.extra = set.seed(2022),
+
+                      autodep = TRUE) 
+
+
+# Load required packages
+
+if(require(pacman)==F) install.packages('pacman')
+
+pacman::p_load(tidyverse, stringr, magrittr, purrr, imputeTS, timetk, brms, caret, forecast, zoo, kableExtra, DT, stargazer, readxl, gridExtra, mgcv, stats)
+
+
+# Graphic setup
+
+theme_set(theme_bw() +
+
+          theme(legend.position = 'top',
+
+                axis.title = element_text(size=14)))
+
+scale_colour_discrete = scale_color_brewer(palette = "Dark2")
+```
+
+# Load Data
+
+Load RPE data, Sensor data, and participants' anthropometric data.
+
+```{r load, cache=TRUE}
+
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+#Load RPE
+load("y.RData")
+RPE <- y-1
+rm(y)
+
+#Load features
+
+load("input_data_sensors.RData")
+
+#Load Individual characteristics
+
+load("Anthrpmtrc_data.RData")
+
+```
+
+# Data frame preparation
+
+Preparation of inputs for the analysis, to organize all the necessary inputs from participants' individual characteristics, task factors, and sensors' median features into "main_df" dataframe.
+
+```{r data_prep, warning=FALSE, cache=TRUE}
+
+Anthrpmtrc_data$BMI <- (Anthrpmtrc_data$`Weight (kg)`/(Anthrpmtrc_data$`Height (cm)`/100)^2)
+Anthrpmtrc_data <- Anthrpmtrc_data[-which(is.na(Anthrpmtrc_data$Gender)),]
+colnames(Anthrpmtrc_data)[1] <- "subject"
+
+Anthrpmtrc_data$Gender[which(Anthrpmtrc_data$Gender=="M")] <- 1
+Anthrpmtrc_data$Gender[which(Anthrpmtrc_data$Gender=="F")] <- 0
+
+RPE_long <- RPE %>% 
+  mutate(subject = substr(rownames(RPE),1,5), condition = substr(rownames(RPE),17,22),.before = X0) %>%
+  pivot_longer(cols = 3:12, names_to = "time", values_to = "RPE") %>%
+  mutate(time = as.numeric(substr(time,2,3))) %>%
+  mutate(sub_con = paste(subject,condition,sep = "-"), .before = subject)
+
+main_df <- merge(RPE_long, Anthrpmtrc_data[,c("subject", "Gender", "Age", "BMI", "Waist circumference (cm)", "Hip circumference (cm)")], by= "subject", all.x = TRUE)
+
+sub_cons <- unique(RPE_long$sub_con)
+
+rnm_fun <- function(x){
+  
+  x = as.data.frame(x)
+  rownames(x) <- sub_cons
+  
+  return(x)
+}
+
+med_list <- input_data_sensors[grepl("Accelerometer|Gyroscope", names(input_data_sensors))]
+med_list <- lapply(med_list, rnm_fun)
+
+long_fun <- function(x, name){
+  
+  x <- x %>% mutate(sub_con = sub_cons) %>%
+    select(sub_con, everything())
+  
+  ln <- dim(x)[2]
+  
+  x = x%>%
+    pivot_longer(cols = 2:ln, names_to = "time" , values_to = name)
+  
+  return(x)
+  }
+
+med_list <- lapply(names(med_list), function(name){
+  long_fun(med_list[[name]], name)
+})
+
+med_list <- reduce(med_list, full_join, by = c("sub_con", "time"))
+
+main_df <- merge(main_df, med_list, by= c("sub_con","time"), all.x = TRUE )
+
+main_df <- main_df %>%
+  separate(condition, into = c("load", "pace"), sep = "-") %>%
+  mutate(load = as.numeric(load), 
+         pace = as.numeric(pace))
+
+main_df <- main_df[-which(main_df$sub_con=="Sub03-2.5-5"),]
+
+main_df <- main_df %>%
+  group_by(sub_con) %>%
+  arrange(time, .by_group = TRUE) %>%  
+  ungroup() %>%              
+  group_by(sub_con)
+
+```
+
+# Fit basic nonlinear functions to data
+
+In this section a power curve and negative exponential functions are fitted to the RPE as nonlinear functions to be later used in the hierarchical model. Due to their similar performance, the power curve was chosen as the nonlinear function in future models.
+
+```{r nlfunctions_fit, warning=FALSE, cache=TRUE}
+
+# Power curve fitting with nls
+
+power_curve_model <- nls(RPE ~ a*time^b, data = main_df, lower = 0, upper = 1)
+
+summary(power_curve_model)
+
+power_curve_opt <- c(a = round(coef(power_curve_model)[1], 3), b = round(coef(power_curve_model)[2],3) , bic = BIC(power_curve_model))
+
+print(paste0("The optimum power curve gives us the equation: ", power_curve_opt[1], "*x^",power_curve_opt[2]))
+
+# Negative Exponential fitting with nls
+
+nxp_curve_model = nls(RPE ~ (10*(1-exp(-(c)*time))), data = main_df, start = list(c = 0.001), lower =c(c = 0) , upper = c(c = 1), algorithm = "port")
+
+summary(nxp_curve_model)
+
+nxp_curve_opt <- c(c = round(coef(nxp_curve_model),3), bic = BIC(nxp_curve_model))
+
+print(paste0("The optimum negative exponential curve gives us the equation: 10(1-exp(-",nxp_curve_opt[1], "*x)"))
+
+# Plotting the curves
+
+avg_RPE <- apply(RPE[-which(rownames(RPE)=="Sub03 Condition 2.5-5"),], 2, mean)
+time_unique <- seq(0,45, by=5)
+RPE_long <- RPE_long[-which(RPE_long$sub_con=="Sub03-2.5-5"),]
+
+power_curve_fit_long <- cbind(RPE_long[,1:4],data.frame(RPE = coef(power_curve_model)[1]*RPE_long$time^(coef(power_curve_model)[2])))
+power_curve_fit_long$label = c("power_curve_fit")
+
+negexp_curve_fit_long = cbind(RPE_long[,1:4], data.frame(RPE = 10*(1-exp(-(coef(nxp_curve_model)[1])*RPE_long$time))))
+negexp_curve_fit_long$label = c("nxp_curve_fit")
+
+avg_RPE_long <- cbind(RPE_long[,1:4], data.frame(RPE = rep(avg_RPE,43)))
+avg_RPE_long$label <- c("avg_RPE")
+
+RPE_long$label <- c("actual")
+
+RPE_plot_df <- rbind(RPE_long, avg_RPE_long, power_curve_fit_long, negexp_curve_fit_long)
+
+RPE_plot <- ggplot2::ggplot(RPE_plot_df, aes(x=time, y = RPE, group = label , color = label)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~sub_con, scales = "free_y") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+               panel.grid.minor = element_blank(),
+        legend.position = "bottom") +
+  labs(title = paste("RPE and fitted power curve and exponential curve over Time"),
+              x = "Time", 
+              y = "RPE")
+
+print(RPE_plot)
+  
+```
+
+# Fitting with the brms package
+
+# Additional Bayesian Plots
+
+```{r bplots_st1, cache=TRUE}
+
+# Plot conditional effects
+
+effects_rnds_pc_AR1_5up <- conditional_effects(fit_rnds_pc_AR1_5up)
+
+plot(effects_rnds_pc_AR1_5up)
+
+# Plot posterior predictive plots
+
+pp_check(fit_fixed) + ggtitle("Posterior Predictive Check: Density Overlay for fit_fixed_st1")+ xlab("RPE Values") + ylab("Density") + theme_minimal()
+
+pp_check(fit_rnds)+ ggtitle("Posterior Predictive Check: Density Overlay for fit_rnds")+ xlab("RPE Values") + ylab("Density") + theme_minimal()
+
+
+```
+
+## Fit Strategy: gradual update with leave-one-out
+
+In this strategy, we first update the posterior distribution for (N-1) samples (42 in our case) for all time points, and then predict for the left out sample, gradually. Meaning that the posterior is updated each time for the left_out sample, using the data from the {22,33,44,55,66,77,89} percentiles of time, and then the remaining parts are predicted. For instance, we use the data from the first three time points (22th perc) to update the posterior and then predict for the remaining 7 time points.
+
+```{r timeTransformation, warning=FALSE, cache=TRUE}
+
+main_df <- main_df %>%
+  mutate(time_pc = (power_curve_opt[1]*time^power_curve_opt[2]), time_nxp = 10*(1-exp((-nxp_curve_opt[1])*time)), .after = time)
+
+```
+
+
+### Model Fixed effects, with power curve (pc) transformation of time
+
+```{r fxdPc, warning=FALSE, cache=TRUE}
+
+# for the fixed effects model 
+
+sub_con_uniq <- unique(main_df$sub_con)
+
+
+model_fxd_pc <- vector(mode = "list", length = 43)
+names(model_fxd_pc) <-sub_con_uniq
+
+resid_fxd_pc <- vector(mode = "list", length = 43)
+names(resid_fxd_pc) <- sub_con_uniq
+
+mae_fxd_pc <- matrix("NA", nrow = 9, ncol = 43)
+colnames(mae_fxd_pc) <- sub_con_uniq
+rownames(mae_fxd_pc) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+rms_fxd_pc <- matrix("NA", nrow = 9, ncol = 43)
+colnames(rms_fxd_pc) <- sub_con_uniq
+rownames(rms_fxd_pc) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+time_unique <- seq(10,40, by=5)
+
+
+# Function to set new priors based on posterior summary for a specified subject
+    set_new_priors <- function(posterior_summary_df, subject_id) {
+  
+    # get_prior function to extract estimate and error for each term
+      get_prior <- function(term) {
+        row <- posterior_summary_df %>%
+          filter(rownames == term) %>%
+          select(Estimate, Est.Error) %>%
+          as.list()
+        paste0("normal(", row$Estimate, ", ", row$Est.Error, ")")
+      }
+    
+    # Fixed effects
+    fixed_effects <- c('b_Intercept','b_time_pc','b_load','b_pace','b_Gender1','b_Age','b_BMI','b_trunk_Accelerometer_X','b_trunk_Accelerometer_Y','b_trunk_Accelerometer_Z','b_trunk_Gyroscope_X','b_trunk_Gyroscope_Y','b_trunk_Gyroscope_Z','b_upperarm_Accelerometer_X','b_upperarm_Accelerometer_Y','b_upperarm_Accelerometer_Z','b_upperarm_Gyroscope_X','b_upperarm_Gyroscope_Y','b_upperarm_Gyroscope_Z','b_wrist_Accelerometer_X','b_wrist_Accelerometer_Y','b_wrist_Accelerometer_Z','b_wrist_Gyroscope_X','b_wrist_Gyroscope_Y','b_wrist_Gyroscope_Z')
+    fixed_priors <- lapply(fixed_effects, function(effect) {
+      if (grepl("Intercept", effect)){
+        set_prior(get_prior(effect), class = "Intercept", coef = "")
+      } else{
+        set_prior(get_prior(effect), class = "b", coef = gsub("b_", "", effect))
+      }
+    })
+    
+    # Error's sigma
+    sigma_prior <- list(set_prior(get_prior("sigma"), class = "sigma"))
+    
+    # Combining all priors
+    priors <- c(fixed_priors, sigma_prior)
+      
+    return(list(priors = priors))
+    }
+    
+
+# Running the model
+    
+for (j in 1:length(sub_con_uniq)){
+  
+   model_fxd_pc[[j]] <- vector(mode="list", length = 9)
+   resid_fxd_pc[[j]] <- vector(mode="list", length = 9)
+  
+   rows_to_train <-  which(main_df$sub_con != sub_con_uniq[j] )
+   train_data_1 <- main_df[rows_to_train,]
+   test_data_1 <- main_df[-rows_to_train,]
+   actuals1 <- test_data_1$RPE
+   
+   #test_data_1$RPE <- NULL
+       
+   formula <- bf(RPE ~ time_pc + load + pace + Gender + Age + BMI + trunk_Accelerometer_X + trunk_Accelerometer_Y + trunk_Accelerometer_Z +trunk_Gyroscope_X + trunk_Gyroscope_Y + trunk_Gyroscope_Z + upperarm_Accelerometer_X + upperarm_Accelerometer_Y + upperarm_Accelerometer_Z + upperarm_Gyroscope_X + upperarm_Gyroscope_Y + upperarm_Gyroscope_Z + wrist_Accelerometer_X + wrist_Accelerometer_Y + wrist_Accelerometer_Z + wrist_Gyroscope_X + wrist_Gyroscope_Y + wrist_Gyroscope_Z )
+    
+    model_fxd_pc[[j]][[1]] <-  brm(formula, data = train_data_1, family = gaussian(),
+           prior = c(prior(normal(0, 10), class = "b"), 
+                     prior(normal(0, 10), class = "Intercept")),
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_fxd_pc[[j]][[1]]<-  (actuals1 - apply(posterior_predict(model_fxd_pc[[j]][[1]], newdata = test_data_1), 2, mean)) 
+  
+  mae_fxd_pc[1,j] <- mean(abs(resid_fxd_pc[[j]][[1]]))
+  rms_fxd_pc[1,j] <- sqrt(mean((resid_fxd_pc[[j]][[1]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 1 , ", time: 0, with weekly informative priors", ", MAE = " , mae_fxd_pc[1,j], ", and RMSE = ", rms_fxd_pc[1,j]))
+    
+    posterior0 <- posterior_summary( model_fxd_pc[[j]][[1]])[,1:2]
+    posterior0 <- as.data.frame(posterior0)
+    posterior0$rownames <- rownames(posterior0)
+    
+    posterior0 <- posterior0 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+    
+    posterior0$class[which(posterior0$class=="bs")] <- "b"
+    
+    posterior0 <- posterior0[-which(posterior0$class%in%c("lprior","lp","cor","s")),]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+    
+    # Check the fit using the new priors
+    
+    unique_subjects <- unique(train_data_1$subject)
+    
+    new_priors_all <-as.brmsprior(do.call(rbind,set_new_priors(posterior0, subj)[["priors"]]))
+      
+    model_fxd_pc[[j]][[2]] <-  brm(formula, data = train_data_1, family = gaussian(),
+           prior = new_priors_all ,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_fxd_pc[[j]][[2]]<-  (actuals1 - apply(posterior_predict(model_fxd_pc[[j]][[2]], newdata = test_data_1), 2, mean)) 
+  
+  mae_fxd_pc[2,j] <- mean(abs(resid_fxd_pc[[j]][[2]]))
+  rms_fxd_pc[2,j] <- sqrt(mean((resid_fxd_pc[[j]][[2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 2 , ", time:0, after updating priors", ", MAE = " , mae_fxd_pc[2,j], ", and RMSE = ", rms_fxd_pc[2,j]))
+    
+    
+  for (i in 1:length(time_unique)){
+    
+    rows_to_update <-  which(main_df$sub_con == sub_con_uniq[j] & main_df$time <= time_unique[i] )
+  
+    rows_to_test <-  which(test_data_1$time > time_unique[i] )
+    
+    train_data_2 <- main_df[rows_to_update,]
+  
+    test_data <- test_data_1[rows_to_test,1:31]
+    
+    actuals <- actuals1[rows_to_test]
+  
+    posterior1 <- posterior_summary( model_fxd_pc[[j]][[i+1]])
+    posterior1 <- as.data.frame(posterior1)
+    
+    posterior1$withzero <- ifelse( posterior1$Q2.5<=0 & posterior1$Q97.5>0, "TRUE", "FALSE")
+    posterior1$rownames <- rownames(posterior1)
+    
+    posterior1 <- posterior1 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+
+    posterior1$class[which(posterior1$class=="bs")] <- "b"
+
+    posterior1 <- posterior1[-which(posterior1$class%in%c("lprior","lp","cor","s")),]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+    
+    # Adjust train_data for Gender
+    
+    train_df2_len <- dim(train_data_2)[1]
+    train_data_2[(train_df2_len+1),] <- 0
+    
+    train_data_2[(train_df2_len+1),"Gender"] <-  ifelse(train_data_2$Gender[1] == 1, 0, 1)
+    
+    train_data_2$sub_con[(train_df2_len+1)] <- "seudo_sub"
+    train_data_2$subject[(train_df2_len+1)] <- "seudo"
+    
+    # Setting the new priors
+    
+    new_priors <-as.brmsprior(do.call(rbind,set_new_priors(posterior1[,-c(3:5)], subj)[["priors"]]))
+
+    model_fxd_pc[[j]][[i+2]] <- brm(formula, data = train_data_2, family = gaussian(),
+           prior = new_priors,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+  
+    pp <- apply(posterior_predict(model_fxd_pc[[j]][[i+2]], newdata = test_data, allow_new_levels = TRUE), 2, mean)
+    
+    pp[pp>10] <-10
+    pp[pp<0] <- 0
+    
+    resid_fxd_pc[[j]][[i+2]]<-  (actuals - pp) 
+
+    mae_fxd_pc[i+2,j] <- mean(abs(resid_fxd_pc[[j]][[i+2]]))
+    rms_fxd_pc[i+2,j] <- sqrt(mean((resid_fxd_pc[[j]][[i+2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , i+2 , ", time: ", time_unique[i], ", MAE = " , mae_fxd_pc[i+2,j], ", and RMSE = ", rms_fxd_pc[i+2,j]))
+  }
+}
+    
+```
+
+#### Model Fixed effects model, with pc - MAE plots
+
+```{r fxdPc_plt, warning=FALSE, cache=TRUE}
+
+# Residual Plots
+
+perc_names2 <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+for (i in seq_along(resid_fxd_pc)) {
+  for (j in seq_along(resid_fxd_pc[[i]])) {
+    resid_fxd_pc[[i]][[j]] <- data.frame(resid = resid_fxd_pc[[i]][[j]])
+    resid_fxd_pc[[i]][[j]]$perc <- perc_names2[j]
+  }
+  resid_fxd_pc[[i]] <- do.call(rbind, resid_fxd_pc[[i]])
+}
+
+names(resid_fxd_pc) <- sub_con_uniq
+
+for (i in seq_along(resid_fxd_pc)) {
+  resid_fxd_pc[[i]]$sub_con <- names(resid_fxd_pc)[i]
+}
+
+resid_fxd_pc_long <- do.call(rbind, resid_fxd_pc)
+
+# Boxplot
+
+plt_resid_fxd_pc <- ggplot(resid_fxd_pc_long[-which(resid_fxd_pc_long$perc==0 | resid_fxd_pc_long$perc==0.001),], aes(x = perc, y = resid, group = perc)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Prediction error versus time percentiles for individual testing _ Model fixed effects with no smooth predictors, with PC- ST4",
+       x = "Time Percentile", 
+       y = "Prediction Error")
+
+print(plt_resid_fxd_pc)
+
+
+# MAE plots
+
+mae_fxd_pc <- as.data.frame(mae_fxd_pc)
+rownames(mae_fxd_pc) <- perc_names2
+colnames(mae_fxd_pc) <- sub_con_uniq
+
+# Reshape the data frame to long format
+mae_fxd_pc_long <- mae_fxd_pc %>%
+  mutate(Perc = rownames(mae_fxd_pc)) %>%
+  pivot_longer(cols = -Perc, names_to = "sub_con", values_to = "MAE")
+
+mae_fxd_pc_long$Perc <- round(as.numeric(mae_fxd_pc_long$Perc),2)
+mae_fxd_pc_long$MAE <- round(as.numeric(mae_fxd_pc_long$MAE),3)
+
+mae <- apply(mae_fxd_pc,1,as.numeric)
+
+mae <- apply(mae,2,mean)
+
+
+# Line plots
+
+plt_mae_fxd_pc <- ggplot(mae_fxd_pc_long[-which(mae_fxd_pc_long$Perc==0 | mae_fxd_pc_long$Perc==0.001),], aes(x = Perc, y = MAE, group = sub_con)) +
+  geom_line() +
+  facet_wrap(~ sub_con, scales = "free_y") +
+  labs(title = "MAE over Percentiles for Each sub_con",
+       x = "Percentile",
+       y = "MAE") +
+  theme_minimal()
+
+print(plt_mae_fxd_pc)
+
+
+```
+
+### Model Random Slope and Intercept, with pc
+
+```{r rndsPc, warning=FALSE, cache=TRUE}
+
+# for the random slope and intercept model with PC transformation
+
+sub_con_uniq <- unique(main_df$sub_con)
+
+model_rnds_pc <- vector(mode = "list", length = 43)
+names(model_rnds_pc) <- sub_con_uniq
+
+resid_rnds_pc <- vector(mode = "list", length = 43)
+names(resid_rnds_pc) <- sub_con_uniq
+
+mae_rnds_pc <- matrix("NA", nrow = 9, ncol = 43)
+colnames(mae_rnds_pc) <- sub_con_uniq
+rownames(mae_rnds_pc) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+rms_rnds_pc <- matrix("NA", nrow = 9, ncol = 43)
+colnames(rms_rnds_pc) <- sub_con_uniq
+rownames(rms_rnds_pc) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+time_unique <- seq(10,40, by=5)
+
+# Function to set new priors based on posterior summary for a specified subject
+    set_new_priors <- function(posterior_summary_df, subject_id) {
+  
+    # get_prior function to extract estimate and error for each term
+      get_prior <- function(term) {
+        row <- posterior_summary_df %>%
+          filter(rownames == term) %>%
+          select(Estimate, Est.Error) %>%
+          as.list()
+        paste0("normal(", row$Estimate, ", ", row$Est.Error, ")")
+      }
+    
+    # Fixed effects
+    fixed_effects <- c('b_Intercept','b_time_pc','b_load','b_pace','b_Gender1','b_Age','b_BMI','b_trunk_Accelerometer_X','b_trunk_Accelerometer_Y','b_trunk_Accelerometer_Z','b_trunk_Gyroscope_X','b_trunk_Gyroscope_Y','b_trunk_Gyroscope_Z','b_upperarm_Accelerometer_X','b_upperarm_Accelerometer_Y','b_upperarm_Accelerometer_Z','b_upperarm_Gyroscope_X','b_upperarm_Gyroscope_Y','b_upperarm_Gyroscope_Z','b_wrist_Accelerometer_X','b_wrist_Accelerometer_Y','b_wrist_Accelerometer_Z','b_wrist_Gyroscope_X','b_wrist_Gyroscope_Y','b_wrist_Gyroscope_Z')
+    fixed_priors <- lapply(fixed_effects, function(effect) {
+      if (grepl("Intercept", effect)){
+        set_prior(get_prior(effect), class = "Intercept", coef = "")
+      } else{
+        set_prior(get_prior(effect), class = "b", coef = gsub("b_", "", effect))
+      }
+    })
+    
+    # Random effects
+    random_effects_subj <- c(
+      "sd_subject__Intercept", "sd_subject__time", 
+      "cor_subject__Intercept__time", 
+      paste0("r_subject[", subject_id, ",Intercept]"), 
+      paste0("r_subject[", subject_id, ",time]")
+    )
+    random_priors_subj <- lapply(random_effects_subj, function(effect) {
+      if (grepl("cor_", effect)) {
+        return(set_prior("lkj_corr_cholesky(1)", class = "L", group = "subject"))
+      } else if (grepl("r_subject", effect)) {
+        term <- paste0("new_", sub("].*", "",sub("^[^,]*,", "", effect)) )
+        return(set_prior(get_prior(effect), class = "b", coef = term))
+      } else {
+        term <- gsub("sd_", "", effect)
+        parts <- strsplit(term, "__")[[1]]
+        return(set_prior(get_prior(effect), class = "sd", group = parts[1], coef = parts[2]))
+      }
+    })
+    
+    random_effects_all <- c(
+      "sd_subject__Intercept", "sd_subject__time", 
+      "cor_subject__Intercept__time", 
+      paste0("r_subject[", unique(substr(sub_con_uniq,1,5)), ",Intercept]"), 
+      paste0("r_subject[", unique(substr(sub_con_uniq,1,5)), ",time]")
+    )
+    random_priors_all <- lapply(random_effects_all, function(effect) {
+      if (grepl("cor_", effect)) {
+        return(set_prior("lkj_corr_cholesky(1)", class = "L", group = "subject"))
+      } else if (grepl("r_subject", effect)) {
+        
+        term <- paste0("new_", sub(",","_",substr(effect, 11,(nchar(effect)-1))) )
+        return(set_prior(get_prior(effect), class = "b", coef = term))
+      } else {
+        term <- gsub("sd_", "", effect)
+        parts <- strsplit(term, "__")[[1]]
+        return(set_prior(get_prior(effect), class = "sd", group = parts[1], coef = parts[2]))
+      }
+    })
+    
+    # Error's sigma
+    sigma_prior <- list(set_prior(get_prior("sigma"), class = "sigma"))
+    
+    # Combining all priors
+    priors_subj <- c(fixed_priors, random_priors_subj, sigma_prior)
+    priors_all <- c(fixed_priors, random_priors_all, sigma_prior)
+      
+    return(list(priors_subj = priors_subj, priors_all = priors_all))
+    }
+
+# Running the model
+    
+for (j in 1:length(sub_con_uniq)){
+  
+   model_rnds_pc[[j]] <- vector(mode="list", length = 9)
+   resid_rnds_pc[[j]] <- vector(mode="list", length = 9)
+  
+   rows_to_train <-  which(main_df$sub_con != sub_con_uniq[j] )
+   train_data_1 <- main_df[rows_to_train,]
+   test_data_1 <- main_df[-rows_to_train,]
+   actuals1 <- test_data_1$RPE
+       
+   formula <- bf(RPE ~ time_pc + load + pace + Gender + Age + BMI +  trunk_Accelerometer_X + trunk_Accelerometer_Y + trunk_Accelerometer_Z +trunk_Gyroscope_X + trunk_Gyroscope_Y + trunk_Gyroscope_Z + upperarm_Accelerometer_X + upperarm_Accelerometer_Y + upperarm_Accelerometer_Z + upperarm_Gyroscope_X + upperarm_Gyroscope_Y + upperarm_Gyroscope_Z + wrist_Accelerometer_X + wrist_Accelerometer_Y + wrist_Accelerometer_Z + wrist_Gyroscope_X + wrist_Gyroscope_Y + wrist_Gyroscope_Z + (1 + time | subject))
+    
+    model_rnds_pc[[j]][[1]] <-  brm(formula, data = train_data_1, family = gaussian(),
+           prior = c(prior(normal(0, 10), class = "b"), 
+                     prior(normal(0, 10), class = "Intercept"),
+                     prior(normal(0, 1), class = "sd", group = "subject")),
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_rnds_pc[[j]][[1]]<-  (actuals1 - apply(posterior_predict(model_rnds_pc[[j]][[1]], newdata = test_data_1), 2, mean)) 
+  
+  mae_rnds_pc[1,j] <- mean(abs(resid_rnds_pc[[j]][[1]]))
+  rms_rnds_pc[1,j] <- sqrt(mean((resid_rnds_pc[[j]][[1]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 1 , ", time: 0, with weekly informative priors", ", MAE = " , mae_rnds_pc[1,j], ", and RMSE = ", rms_rnds_pc[1,j]))
+    
+    posterior0 <- posterior_summary( model_rnds_pc[[j]][[1]])[,1:2]
+    posterior0 <- as.data.frame(posterior0)
+    posterior0$rownames <- rownames(posterior0)
+    
+    posterior0 <- posterior0 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+    
+    posterior0$class[which(posterior0$class=="bs")] <- "b"
+    
+    posterior0 <- posterior0[-which(posterior0$class%in%c("lprior","lp","cor","s")),]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+    
+    # Check the fit using the new priors
+    
+    unique_subjects <- unique(train_data_1$subject)
+    
+    for (subject in unique_subjects) {
+      intercept_col_name <- paste0("new_", subject, "_Intercept")
+      time_col_name <- paste0("new_", subject, "_time")
+      train_data_1[[intercept_col_name]] <- ifelse(train_data_1$subject == subject, 1, 0)
+      train_data_1[[time_col_name]] <- ifelse(train_data_1$subject == subject, train_data_1$time, 0)
+      test_data_1[[intercept_col_name]] <- ifelse(test_data_1$subject == subject, 1, 0)
+      test_data_1[[time_col_name]] <- ifelse(test_data_1$subject == subject, test_data_1$time, 0)
+}
+    
+    new_priors_all <-as.brmsprior(do.call(rbind,set_new_priors(posterior0, subj)[["priors_all"]]))
+    
+    new_formula_all <- as.formula(paste0(formula,"+", paste0(colnames(train_data_1)[32:57], collapse="+ ")))
+      
+    model_rnds_pc[[j]][[2]] <-  brm(new_formula_all, data = train_data_1, family = gaussian(),
+           prior = new_priors_all ,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_rnds_pc[[j]][[2]]<-  (actuals1 - apply(posterior_predict(model_rnds_pc[[j]][[2]], newdata = test_data_1), 2, mean)) 
+  
+  mae_rnds_pc[2,j] <- mean(abs(resid_rnds_pc[[j]][[2]]))
+  rms_rnds_pc[2,j] <- sqrt(mean((resid_rnds_pc[[j]][[2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 2 , ", time:0, after updating priors", ", MAE = " , mae_rnds_pc[2,j], ", and RMSE = ", rms_rnds_pc[2,j]))
+    
+    
+  for (i in 1:length(time_unique)){
+    
+    rows_to_update <-  which(main_df$sub_con == sub_con_uniq[j] & main_df$time <= time_unique[i] )
+  
+    rows_to_test <-  which(test_data_1$time > time_unique[i] )
+    
+    train_data_2 <- main_df[rows_to_update,]
+  
+    test_data <- test_data_1[rows_to_test,1:31]
+    
+    actuals <- actuals1[rows_to_test]
+
+    posterior1 <- posterior_summary( model_rnds_pc[[j]][[i+1]])
+    posterior1 <- as.data.frame(posterior1)
+    
+    posterior1$withzero <- ifelse( posterior1$Q2.5<=0 & posterior1$Q97.5>0, "TRUE", "FALSE")
+    posterior1$rownames <- rownames(posterior1)
+    
+    posterior1 <- posterior1 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+
+    posterior1$class[which(posterior1$class=="bs")] <- "b"
+
+    posterior1 <- posterior1[-which(posterior1$class%in%c("lprior","lp","cor","s")),]
+    
+    posterior1 <- posterior1[-which(posterior1$class=="r" &  !grepl(subj, posterior1$coeff)),]
+    
+    posterior1 <- posterior1[-which(posterior1$class=="b"  & grepl("new_", posterior1$coeff )) ,]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+
+    # Adding new intercept and slope coefficients to the model for each left-out subject
+    
+    train_data_2$new_Intercept <- 1
+    train_data_2$new_time <- train_data_2$time
+      
+    test_data$new_Intercept <- 1
+    test_data$new_time <- test_data$time
+    
+    # Adjust train_data for Gender
+    
+    train_df2_len <- dim(train_data_2)[1]
+    train_data_2[(train_df2_len+1),] <- 0
+    
+    train_data_2[(train_df2_len+1),"Gender"] <-  ifelse(train_data_2$Gender[1] == 1, 0, 1)
+    
+    train_data_2$sub_con[(train_df2_len+1)] <- "seudo_sub"
+    train_data_2$subject[(train_df2_len+1)] <- "seudo"
+    
+    # Changing the formula
+    
+    new_formula <- as.formula(paste0(formula, "+ new_Intercept + new_time"))
+    
+    # Setting the new priors
+    
+    new_priors <-as.brmsprior(do.call(rbind,set_new_priors(posterior1[,-c(3:5)], subj)[["priors_subj"]]))
+
+    model_rnds_pc[[j]][[i+2]] <- brm(new_formula, data = train_data_2, family = gaussian(),
+           prior = new_priors,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+  
+    pp <- apply(posterior_predict(model_rnds_pc[[j]][[i+2]], newdata = test_data, allow_new_levels = TRUE), 2, mean)
+    
+    pp[pp>10] <-10
+    pp[pp<0] <- 0
+    
+    resid_rnds_pc[[j]][[i+2]]<-  (actuals - pp) 
+
+    mae_rnds_pc[i+2,j] <- mean(abs(resid_rnds_pc[[j]][[i+2]]))
+    rms_rnds_pc[i+2,j] <- sqrt(mean((resid_rnds_pc[[j]][[i+2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , i+2 , ", time: ", time_unique[i], ", MAE = " , mae_rnds_pc[i+2,j], ", and RMSE = ", rms_rnds_pc[i+2,j]))
+  }
+}
+    
+```
+
+#### Model RNDS, with pc - MAE plots
+
+```{r rndsPc_plt, warning=FALSE, cache=TRUE}
+
+# Residual Plots
+
+perc_names2 <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+for (i in seq_along(resid_rnds_pc)) {
+  for (j in seq_along(resid_rnds_pc[[i]])) {
+    resid_rnds_pc[[i]][[j]] <- data.frame(resid = resid_rnds_pc[[i]][[j]])
+    resid_rnds_pc[[i]][[j]]$perc <- perc_names2[j]
+  }
+  resid_rnds_pc[[i]] <- do.call(rbind, resid_rnds_pc[[i]])
+}
+
+names(resid_rnds_pc) <- sub_con_uniq
+
+for (i in seq_along(resid_rnds_pc)) {
+  resid_rnds_pc[[i]]$sub_con <- names(resid_rnds_pc)[i]
+}
+
+resid_rnds_pc_long <- do.call(rbind, resid_rnds_pc)
+
+# Boxplot
+
+plt_resid_rnds_pc <- ggplot(resid_rnds_pc_long[-which(resid_rnds_pc_long$perc==0 | resid_rnds_pc_long$perc==0.001),], aes(x = perc, y = resid, group = perc)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Prediction error versus time percentiles for individual testing _ Model random slope and intercept , without smooth predictors with PC transformation - ST4",
+       x = "Time Percentile", 
+       y = "Prediction Error")
+
+print(plt_resid_rnds_pc)
+
+# MAE plots
+
+mae_rnds_pc <- as.data.frame(mae_rnds_pc)
+rownames(mae_rnds_pc) <- perc_names2
+colnames(mae_rnds_pc) <- sub_con_uniq
+
+# Reshape the data frame to long format
+mae_rnds_pc_long <- mae_rnds_pc %>%
+  mutate(Perc = rownames(mae_rnds_pc)) %>%
+  pivot_longer(cols = -Perc, names_to = "sub_con", values_to = "MAE")
+
+mae_rnds_pc_long$Perc <- round(as.numeric(mae_rnds_pc_long$Perc),2)
+mae_rnds_pc_long$MAE <- round(as.numeric(mae_rnds_pc_long$MAE),3)
+
+mae <- apply(mae_rnds_pc,1,as.numeric)
+
+mae <- apply(mae,2,mean)
+
+# Line plots
+
+plt_mae_rnds_pc <- ggplot(mae_rnds_pc_long[-which(mae_rnds_pc_long$Perc==0 | mae_rnds_pc_long$Perc==0.001),], aes(x = Perc, y = MAE, group = sub_con)) +
+  geom_line() +
+  facet_wrap(~ sub_con, scales = "free_y") +  # Adjust scales to "fixed" if needed
+  labs(title = "MAE over Percentiles for Each sub_con",
+       x = "Percentile",
+       y = "MAE") +
+  theme_minimal()
+
+print(plt_mae_rnds_pc)
+
+```
+
+### Model Fixed effects, no pc
+
+```{r fxdNoPc, warning=FALSE, cache=TRUE}
+
+# for the fixed effects model 
+
+sub_con_uniq <- unique(main_df$sub_con)
+
+model_fxd <- vector(mode = "list", length = 43)
+names(model_fxd) <-sub_con_uniq
+
+resid_fxd <- vector(mode = "list", length = 43)
+names(resid_fxd) <- sub_con_uniq
+
+mae_fxd <- matrix("NA", nrow = 9, ncol = 43)
+colnames(mae_fxd) <- sub_con_uniq
+rownames(mae_fxd) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+rms_fxd <- matrix("NA", nrow = 9, ncol = 43)
+colnames(rms_fxd) <- sub_con_uniq
+rownames(rms_fxd) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+time_unique <- seq(10,40, by=5)
+
+# Function to set new priors based on posterior summary for a specified subject
+    set_new_priors <- function(posterior_summary_df, subject_id) {
+  
+    # get_prior function to extract estimate and error for each term
+      get_prior <- function(term) {
+        row <- posterior_summary_df %>%
+          filter(rownames == term) %>%
+          select(Estimate, Est.Error) %>%
+          as.list()
+        paste0("normal(", row$Estimate, ", ", row$Est.Error, ")")
+      }
+    
+    # Fixed effects
+    fixed_effects <- c('b_Intercept','b_time','b_load','b_pace','b_Gender1','b_Age','b_BMI','b_trunk_Accelerometer_X','b_trunk_Accelerometer_Y','b_trunk_Accelerometer_Z','b_trunk_Gyroscope_X','b_trunk_Gyroscope_Y','b_trunk_Gyroscope_Z','b_upperarm_Accelerometer_X','b_upperarm_Accelerometer_Y','b_upperarm_Accelerometer_Z','b_upperarm_Gyroscope_X','b_upperarm_Gyroscope_Y','b_upperarm_Gyroscope_Z','b_wrist_Accelerometer_X','b_wrist_Accelerometer_Y','b_wrist_Accelerometer_Z','b_wrist_Gyroscope_X','b_wrist_Gyroscope_Y','b_wrist_Gyroscope_Z')
+    fixed_priors <- lapply(fixed_effects, function(effect) {
+      if (grepl("Intercept", effect)){
+        set_prior(get_prior(effect), class = "Intercept", coef = "")
+      } else{
+        set_prior(get_prior(effect), class = "b", coef = gsub("b_", "", effect))
+      }
+    })
+    
+    # Error's sigma
+    sigma_prior <- list(set_prior(get_prior("sigma"), class = "sigma"))
+    
+    # Combining all priors
+    priors <- c(fixed_priors, sigma_prior)
+      
+    return(list(priors = priors))
+    }
+    
+# Running the model
+    
+for (j in 1:length(sub_con_uniq)){
+  
+   model_fxd[[j]] <- vector(mode="list", length = 9)
+   resid_fxd[[j]] <- vector(mode="list", length = 9)
+  
+   rows_to_train <-  which(main_df$sub_con != sub_con_uniq[j] )
+   train_data_1 <- main_df[rows_to_train,]
+   test_data_1 <- main_df[-rows_to_train,]
+   actuals1 <- test_data_1$RPE
+       
+   formula <- bf(RPE ~ time + load + pace + Gender + Age + BMI + trunk_Accelerometer_X + trunk_Accelerometer_Y + trunk_Accelerometer_Z +trunk_Gyroscope_X + trunk_Gyroscope_Y + trunk_Gyroscope_Z + upperarm_Accelerometer_X + upperarm_Accelerometer_Y + upperarm_Accelerometer_Z + upperarm_Gyroscope_X + upperarm_Gyroscope_Y + upperarm_Gyroscope_Z + wrist_Accelerometer_X + wrist_Accelerometer_Y + wrist_Accelerometer_Z + wrist_Gyroscope_X + wrist_Gyroscope_Y + wrist_Gyroscope_Z )
+    
+    model_fxd[[j]][[1]] <-  brm(formula, data = train_data_1, family = gaussian(),
+           prior = c(prior(normal(0, 10), class = "b"), 
+                     prior(normal(0, 10), class = "Intercept")),
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_fxd[[j]][[1]]<-  (actuals1 - apply(posterior_predict(model_fxd[[j]][[1]], newdata = test_data_1), 2, mean)) 
+  
+  mae_fxd[1,j] <- mean(abs(resid_fxd[[j]][[1]]))
+  rms_fxd[1,j] <- sqrt(mean((resid_fxd[[j]][[1]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 1 , ", time: 0, with weekly informative priors", ", MAE = " , mae_fxd[1,j], ", and RMSE = ", rms_fxd[1,j]))
+    
+    posterior0 <- posterior_summary( model_fxd[[j]][[1]])[,1:2]
+    posterior0 <- as.data.frame(posterior0)
+    posterior0$rownames <- rownames(posterior0)
+    
+    posterior0 <- posterior0 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+    
+    posterior0$class[which(posterior0$class=="bs")] <- "b"
+    
+    posterior0 <- posterior0[-which(posterior0$class%in%c("lprior","lp","cor","s")),]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+    
+    # Check the fit using the new priors
+    
+    unique_subjects <- unique(train_data_1$subject)
+    
+    new_priors_all <-as.brmsprior(do.call(rbind,set_new_priors(posterior0, subj)[["priors"]]))
+      
+    model_fxd[[j]][[2]] <-  brm(formula, data = train_data_1, family = gaussian(),
+           prior = new_priors_all ,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_fxd[[j]][[2]]<-  (actuals1 - apply(posterior_predict(model_fxd[[j]][[2]], newdata = test_data_1), 2, mean)) 
+  
+  mae_fxd[2,j] <- mean(abs(resid_fxd[[j]][[2]]))
+  rms_fxd[2,j] <- sqrt(mean((resid_fxd[[j]][[2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 2 , ", time:0, after updating priors", ", MAE = " , mae_fxd[2,j], ", and RMSE = ", rms_fxd[2,j]))
+    
+    
+  for (i in 1:length(time_unique)){
+    
+    rows_to_update <-  which(main_df$sub_con == sub_con_uniq[j] & main_df$time <= time_unique[i] )
+  
+    rows_to_test <-  which(test_data_1$time > time_unique[i] )
+    
+    train_data_2 <- main_df[rows_to_update,]
+  
+    test_data <- test_data_1[rows_to_test,1:31]
+    
+    actuals <- actuals1[rows_to_test]
+  
+    posterior1 <- posterior_summary( model_fxd[[j]][[i+1]])
+    posterior1 <- as.data.frame(posterior1)
+    
+    posterior1$withzero <- ifelse( posterior1$Q2.5<=0 & posterior1$Q97.5>0, "TRUE", "FALSE")
+    posterior1$rownames <- rownames(posterior1)
+    
+    posterior1 <- posterior1 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+
+    posterior1$class[which(posterior1$class=="bs")] <- "b"
+
+    posterior1 <- posterior1[-which(posterior1$class%in%c("lprior","lp","cor","s")),]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+    
+    # Adjust train_data for Gender
+    
+    train_df2_len <- dim(train_data_2)[1]
+    train_data_2[(train_df2_len+1),] <- 0
+    
+    train_data_2[(train_df2_len+1),"Gender"] <-  ifelse(train_data_2$Gender[1] == 1, 0, 1)
+    
+    train_data_2$sub_con[(train_df2_len+1)] <- "seudo_sub"
+    train_data_2$subject[(train_df2_len+1)] <- "seudo"
+    
+    # Setting the new priors
+    
+    new_priors <-as.brmsprior(do.call(rbind,set_new_priors(posterior1[,-c(3:5)], subj)[["priors"]]))
+
+    model_fxd[[j]][[i+2]] <- brm(formula, data = train_data_2, family = gaussian(),
+           prior = new_priors,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+  
+    pp <- apply(posterior_predict(model_fxd[[j]][[i+2]], newdata = test_data, allow_new_levels = TRUE), 2, mean)
+    
+    pp[pp>10] <-10
+    pp[pp<0] <- 0
+    
+    resid_fxd[[j]][[i+2]]<-  (actuals - pp) 
+
+    mae_fxd[i+2,j] <- mean(abs(resid_fxd[[j]][[i+2]]))
+    rms_fxd[i+2,j] <- sqrt(mean((resid_fxd[[j]][[i+2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , i+2 , ", time: ", time_unique[i], ", MAE = " , mae_fxd[i+2,j], ", and RMSE = ", rms_fxd[i+2,j]))
+  }
+}
+    
+```
+
+#### Model Fixed effects model, no pc - MAE plots
+
+```{r fxdNoPc_plt, warning=FALSE, cache=TRUE}
+
+# Residual Plots
+
+perc_names2 <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+for (i in seq_along(resid_fxd)) {
+  for (j in seq_along(resid_fxd[[i]])) {
+    resid_fxd[[i]][[j]] <- data.frame(resid = resid_fxd[[i]][[j]])
+    resid_fxd[[i]][[j]]$perc <- perc_names2[j]
+  }
+  resid_fxd[[i]] <- do.call(rbind, resid_fxd[[i]])
+}
+
+names(resid_fxd) <- sub_con_uniq
+
+for (i in seq_along(resid_fxd)) {
+  resid_fxd[[i]]$sub_con <- names(resid_fxd)[i]
+}
+
+resid_fxd_long <- do.call(rbind, resid_fxd)
+
+# Boxplot
+
+plt_resid_fxd <- ggplot(resid_fxd_long[-which(resid_fxd_long$perc==0 | resid_fxd_long$perc==0.001),], aes(x = perc, y = resid, group = perc)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Prediction error versus time percentiles for individual testing _ Model fixed effects with no smooth predictors - ST4",
+       x = "Time Percentile", 
+       y = "Prediction Error")
+
+print(plt_resid_fxd)
+
+# MAE plots
+
+mae_fxd <- as.data.frame(mae_fxd)
+rownames(mae_fxd) <- perc_names2
+colnames(mae_fxd) <- sub_con_uniq
+
+# Reshape the data frame to long format
+mae_fxd_long <- mae_fxd %>%
+  mutate(Perc = rownames(mae_fxd)) %>%
+  pivot_longer(cols = -Perc, names_to = "sub_con", values_to = "MAE")
+
+mae_fxd_long$Perc <- round(as.numeric(mae_fxd_long$Perc),2)
+mae_fxd_long$MAE <- round(as.numeric(mae_fxd_long$MAE),3)
+
+mae <- apply(mae_fxd,1,as.numeric)
+
+mae <- apply(mae,2,mean)
+
+# Line plots
+
+plt_mae_fxd <- ggplot(mae_fxd_long[-which(mae_fxd_long$Perc==0 | mae_fxd_long$Perc==0.001),], aes(x = Perc, y = MAE, group = sub_con)) +
+  geom_line() +
+  facet_wrap(~ sub_con, scales = "free_y") +
+  labs(title = "MAE over Percentiles for Each sub_con",
+       x = "Percentile",
+       y = "MAE") +
+  theme_minimal()
+
+print(plt_mae_fxd)
+
+```
+
+### Model Random Slope and Intercept, no pc
+
+```{r rndsNoPc, warning=FALSE, cache=TRUE}
+
+# for the random slope and intercept model
+
+sub_con_uniq <- unique(main_df$sub_con)
+
+model_rnds <- vector(mode = "list", length = 43)
+names(model_rnds) <- sub_con_uniq
+
+resid_rnds <- vector(mode = "list", length = 43)
+names(resid_rnds) <- sub_con_uniq
+
+mae_rnds <- matrix("NA", nrow = 9, ncol = 43)
+colnames(mae_rnds) <- sub_con_uniq
+rownames(mae_rnds) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+rms_rnds <- matrix("NA", nrow = 9, ncol = 43)
+colnames(rms_rnds) <- sub_con_uniq
+rownames(rms_rnds) <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+time_unique <- seq(10,40, by=5)
+
+# Function to set new priors based on posterior summary for a specified subject
+    set_new_priors <- function(posterior_summary_df, subject_id) {
+  
+    # get_prior function to extract estimate and error for each term
+      get_prior <- function(term) {
+        row <- posterior_summary_df %>%
+          filter(rownames == term) %>%
+          select(Estimate, Est.Error) %>%
+          as.list()
+        paste0("normal(", row$Estimate, ", ", row$Est.Error, ")")
+      }
+    
+    # Fixed effects
+    fixed_effects <- c('b_Intercept','b_time','b_load','b_pace','b_Gender1','b_Age','b_BMI','b_trunk_Accelerometer_X','b_trunk_Accelerometer_Y','b_trunk_Accelerometer_Z','b_trunk_Gyroscope_X','b_trunk_Gyroscope_Y','b_trunk_Gyroscope_Z','b_upperarm_Accelerometer_X','b_upperarm_Accelerometer_Y','b_upperarm_Accelerometer_Z','b_upperarm_Gyroscope_X','b_upperarm_Gyroscope_Y','b_upperarm_Gyroscope_Z','b_wrist_Accelerometer_X','b_wrist_Accelerometer_Y','b_wrist_Accelerometer_Z','b_wrist_Gyroscope_X','b_wrist_Gyroscope_Y','b_wrist_Gyroscope_Z')
+    fixed_priors <- lapply(fixed_effects, function(effect) {
+      if (grepl("Intercept", effect)){
+        set_prior(get_prior(effect), class = "Intercept", coef = "")
+      } else{
+        set_prior(get_prior(effect), class = "b", coef = gsub("b_", "", effect))
+      }
+    })
+    
+    # Random effects
+    random_effects_subj <- c(
+      "sd_subject__Intercept", "sd_subject__time", 
+      "cor_subject__Intercept__time", 
+      paste0("r_subject[", subject_id, ",Intercept]"), 
+      paste0("r_subject[", subject_id, ",time]")
+    )
+    random_priors_subj <- lapply(random_effects_subj, function(effect) {
+      if (grepl("cor_", effect)) {
+        return(set_prior("lkj_corr_cholesky(1)", class = "L", group = "subject"))
+      } else if (grepl("r_subject", effect)) {
+        term <- paste0("new_", sub("].*", "",sub("^[^,]*,", "", effect)) )
+        return(set_prior(get_prior(effect), class = "b", coef = term))
+      } else {
+        term <- gsub("sd_", "", effect)
+        parts <- strsplit(term, "__")[[1]]
+        return(set_prior(get_prior(effect), class = "sd", group = parts[1], coef = parts[2]))
+      }
+    })
+    
+    random_effects_all <- c(
+      "sd_subject__Intercept", "sd_subject__time", 
+      "cor_subject__Intercept__time", 
+      paste0("r_subject[", unique(substr(sub_con_uniq,1,5)), ",Intercept]"), 
+      paste0("r_subject[", unique(substr(sub_con_uniq,1,5)), ",time]")
+    )
+    random_priors_all <- lapply(random_effects_all, function(effect) {
+      if (grepl("cor_", effect)) {
+        return(set_prior("lkj_corr_cholesky(1)", class = "L", group = "subject"))
+      } else if (grepl("r_subject", effect)) {
+        
+        term <- paste0("new_", sub(",","_",substr(effect, 11,(nchar(effect)-1))) )
+        return(set_prior(get_prior(effect), class = "b", coef = term))
+      } else {
+        term <- gsub("sd_", "", effect)
+        parts <- strsplit(term, "__")[[1]]
+        return(set_prior(get_prior(effect), class = "sd", group = parts[1], coef = parts[2]))
+      }
+    })
+    
+    # Error's sigma
+    sigma_prior <- list(set_prior(get_prior("sigma"), class = "sigma"))
+    
+    # Combining all priors
+    priors_subj <- c(fixed_priors, random_priors_subj, sigma_prior)
+    priors_all <- c(fixed_priors, random_priors_all, sigma_prior)
+      
+    return(list(priors_subj = priors_subj, priors_all = priors_all))
+    }
+    
+# Running the model
+    
+for (j in 1:length(sub_con_uniq)){
+  
+   model_rnds_pc[[j]] <- vector(mode="list", length = 9)
+   resid_rnds_pc[[j]] <- vector(mode="list", length = 9)
+  
+   rows_to_train <-  which(main_df$sub_con != sub_con_uniq[j] )
+   train_data_1 <- main_df[rows_to_train,]
+   test_data_1 <- main_df[-rows_to_train,]
+   actuals1 <- test_data_1$RPE
+   
+   #test_data_1$RPE <- NULL
+       
+   formula <- bf(RPE ~ time + load + pace + Gender + Age + BMI +  trunk_Accelerometer_X + trunk_Accelerometer_Y + trunk_Accelerometer_Z +trunk_Gyroscope_X + trunk_Gyroscope_Y + trunk_Gyroscope_Z + upperarm_Accelerometer_X + upperarm_Accelerometer_Y + upperarm_Accelerometer_Z + upperarm_Gyroscope_X + upperarm_Gyroscope_Y + upperarm_Gyroscope_Z + wrist_Accelerometer_X + wrist_Accelerometer_Y + wrist_Accelerometer_Z + wrist_Gyroscope_X + wrist_Gyroscope_Y + wrist_Gyroscope_Z + (1 + time | subject))
+    
+    model_rnds[[j]][[1]] <-  brm(formula, data = train_data_1, family = gaussian(),
+           prior = c(prior(normal(0, 10), class = "b"), 
+                     prior(normal(0, 10), class = "Intercept"),
+                     prior(normal(0, 1), class = "sd", group = "subject")),
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_rnds[[j]][[1]]<-  (actuals1 - apply(posterior_predict(model_rnds[[j]][[1]], newdata = test_data_1), 2, mean)) 
+  
+  mae_rnds[1,j] <- mean(abs(resid_rnds[[j]][[1]]))
+  rms_rnds[1,j] <- sqrt(mean((resid_rnds[[j]][[1]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 1 , ", time: 0, with weekly informative priors", ", MAE = " , mae_rnds[1,j], ", and RMSE = ", rms_rnds[1,j]))
+    
+    posterior0 <- posterior_summary( model_rnds[[j]][[1]])[,1:2]
+    posterior0 <- as.data.frame(posterior0)
+    posterior0$rownames <- rownames(posterior0)
+    
+    posterior0 <- posterior0 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+    
+    posterior0$class[which(posterior0$class=="bs")] <- "b"
+    
+    posterior0 <- posterior0[-which(posterior0$class%in%c("lprior","lp","cor","s")),]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+    
+    # Check the fit using the new priors
+    
+    unique_subjects <- unique(train_data_1$subject)
+    
+    for (subject in unique_subjects) {
+      intercept_col_name <- paste0("new_", subject, "_Intercept")
+      time_col_name <- paste0("new_", subject, "_time")
+      train_data_1[[intercept_col_name]] <- ifelse(train_data_1$subject == subject, 1, 0)
+      train_data_1[[time_col_name]] <- ifelse(train_data_1$subject == subject, train_data_1$time, 0)
+      test_data_1[[intercept_col_name]] <- ifelse(test_data_1$subject == subject, 1, 0)
+      test_data_1[[time_col_name]] <- ifelse(test_data_1$subject == subject, test_data_1$time, 0)
+}
+    
+    new_priors_all <-as.brmsprior(do.call(rbind,set_new_priors(posterior0, subj)[["priors_all"]]))
+    
+    new_formula_all <- as.formula(paste0(formula,"+", paste0(colnames(train_data_1)[32:57], collapse="+ ")))
+      
+      
+    model_rnds[[j]][[2]] <-  brm(new_formula_all, data = train_data_1, family = gaussian(),
+           prior = new_priors_all ,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+     resid_rnds[[j]][[2]]<-  (actuals1 - apply(posterior_predict(model_rnds[[j]][[2]], newdata = test_data_1), 2, mean)) 
+  
+  mae_rnds[2,j] <- mean(abs(resid_rnds[[j]][[2]]))
+  rms_rnds[2,j] <- sqrt(mean((resid_rnds[[j]][[2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , 2 , ", time:0, after updating priors", ", MAE = " , mae_rnds[2,j], ", and RMSE = ", rms_rnds[2,j]))
+    
+  for (i in 1:length(time_unique)){
+    
+    rows_to_update <-  which(main_df$sub_con == sub_con_uniq[j] & main_df$time <= time_unique[i] )
+  
+    rows_to_test <-  which(test_data_1$time > time_unique[i] )
+    
+    #train_data_2 <- rbind(train_data_1, main_df[rows_to_update,])
+    
+    train_data_2 <- main_df[rows_to_update,]
+  
+    test_data <- test_data_1[rows_to_test,1:31]
+    
+    actuals <- actuals1[rows_to_test]
+  
+    posterior1 <- posterior_summary( model_rnds[[j]][[i+1]])
+    posterior1 <- as.data.frame(posterior1)
+    
+    posterior1$withzero <- ifelse( posterior1$Q2.5<=0 & posterior1$Q97.5>0, "TRUE", "FALSE")
+    posterior1$rownames <- rownames(posterior1)
+    
+    posterior1 <- posterior1 %>%
+      mutate( class = ifelse(grepl("_", rownames), sub("_.*", "", rownames),rownames),
+        coeff = ifelse(grepl("_", rownames), sub("^[^_]*_", "", rownames), ""))
+
+    posterior1$class[which(posterior1$class=="bs")] <- "b"
+
+    posterior1 <- posterior1[-which(posterior1$class%in%c("lprior","lp","cor","s")),]
+    
+    posterior1 <- posterior1[-which(posterior1$class=="r" &  !grepl(subj, posterior1$coeff)),]
+    
+    posterior1 <- posterior1[-which(posterior1$class=="b"  & grepl("new_", posterior1$coeff )) ,]
+    
+    subj <- substr(sub_con_uniq[j],1,5)
+
+    # Adding new intercept and slope coefficients to the model for each left-out subject
+    
+    train_data_2$new_Intercept <- 1
+    train_data_2$new_time <- train_data_2$time
+      
+    test_data$new_Intercept <- 1
+    test_data$new_time <- test_data$time
+    
+    # Adjust train_data for Gender
+    
+    train_df2_len <- dim(train_data_2)[1]
+    train_data_2[(train_df2_len+1),] <- 0
+    
+    train_data_2[(train_df2_len+1),"Gender"] <-  ifelse(train_data_2$Gender[1] == 1, 0, 1)
+    
+    train_data_2$sub_con[(train_df2_len+1)] <- "seudo_sub"
+    train_data_2$subject[(train_df2_len+1)] <- "seudo"
+    
+    # Changing the formula
+    
+    new_formula <- as.formula(paste0(formula, "+ new_Intercept + new_time"))
+    
+    # Setting the new priors
+    
+    new_priors <-as.brmsprior(do.call(rbind,set_new_priors(posterior1[,-c(3:5)], subj)[["priors_subj"]]))
+
+    model_rnds[[j]][[i+2]] <- brm(new_formula, data = train_data_2, family = gaussian(),
+           prior = new_priors,
+           iter = 1000, warmup = 500, chains = 4, cores = 4, control = list(adapt_delta = 0.99, max_treedepth = 20),  silent = 2, refresh = 0)
+    
+  
+    pp <- apply(posterior_predict(model_rnds[[j]][[i+2]], newdata = test_data, allow_new_levels = TRUE), 2, mean)
+    
+    pp[pp>10] <-10
+    pp[pp<0] <- 0
+    
+    resid_rnds[[j]][[i+2]]<-  (actuals - pp) 
+
+    mae_rnds[i+2,j] <- mean(abs(resid_rnds[[j]][[i+2]]))
+    rms_rnds[i+2,j] <- sqrt(mean((resid_rnds[[j]][[i+2]])^2))
+  
+    print(paste0("# ", sub_con_uniq[j], ", round " , i+2 , ", time: ", time_unique[i], ", MAE = " , mae_rnds[i+2,j], ", and RMSE = ", rms_rnds[i+2,j]))
+  }
+}
+    
+```
+
+#### Model RNDS, no pc - MAE plots
+
+```{r rndsNoPc_plt, warning=FALSE, cache=TRUE}
+
+# Residual Plots
+
+perc_names2 <- c(0,0.001,round(seq(10, 40, by = 5) / 45, 2))
+
+for (i in seq_along(resid_rnds)) {
+  for (j in seq_along(resid_rnds[[i]])) {
+    resid_rnds[[i]][[j]] <- data.frame(resid = resid_rnds[[i]][[j]])
+    resid_rnds[[i]][[j]]$perc <- perc_names2[j]
+  }
+  resid_rnds[[i]] <- do.call(rbind, resid_rnds[[i]])
+}
+
+names(resid_rnds) <- sub_con_uniq
+
+for (i in seq_along(resid_rnds)) {
+  resid_rnds[[i]]$sub_con <- names(resid_rnds)[i]
+}
+
+resid_rnds_long <- do.call(rbind, resid_rnds)
+
+# Boxplot
+
+plt_resid_rnds <- ggplot(resid_rnds_long[-which(resid_rnds_long$perc==0 | resid_rnds_long$perc==0.001),], aes(x = perc, y = resid, group = perc)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Prediction error versus time percentiles for individual testing _ Model random slope and intercept , without smooth predictors - ST4",
+       x = "Time Percentile", 
+       y = "Prediction Error")
+
+print(plt_resid_rnds)
+
+# MAE plots
+
+mae_rnds <- as.data.frame(mae_rnds)
+rownames(mae_rnds) <- perc_names2
+colnames(mae_rnds) <- sub_con_uniq
+
+# Reshape the data frame to long format
+mae_rnds_long <- mae_rnds %>%
+  mutate(Perc = rownames(mae_rnds)) %>%
+  pivot_longer(cols = -Perc, names_to = "sub_con", values_to = "MAE")
+
+mae_rnds_long$Perc <- round(as.numeric(mae_rnds_long$Perc),2)
+mae_rnds_long$MAE <- round(as.numeric(mae_rnds_long$MAE),3)
+
+mae <- apply(mae_rnds,1,as.numeric)
+
+mae <- apply(mae,2,mean)
+
+# Line plots
+
+plt_mae_rnds <- ggplot(mae_rnds_long[-which(mae_rnds_long$Perc==0 | mae_rnds_long$Perc==0.001),], aes(x = Perc, y = MAE, group = sub_con)) +
+  geom_line() +
+  facet_wrap(~ sub_con, scales = "free_y") +  # Adjust scales to "fixed" if needed
+  labs(title = "MAE over Percentiles for Each sub_con",
+       x = "Percentile",
+       y = "MAE") +
+  theme_minimal()
+
+print(plt_mae_rnds)
+
+```
+

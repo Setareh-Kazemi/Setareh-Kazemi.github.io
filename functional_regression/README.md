@@ -56,7 +56,7 @@ In the [**data**](data) folder, there is an [**input**](input) folder which incl
    4. [IMU_Raw.txt](data//inputs/IMU_Raw.txt): This file contains the link to access the large raw IMU data, provided in gogle drive for download.
    5. [corrected_Changepoints.csv](data//inputs/corrected_Changepoints.csv): In this file the changepoints identifying the start and end of the first 45-minute of experiment are provided.
    6. [y.RData](y.RData): In this file the raw RPE scores for the 44 full sessions are provided. full sessions are related to those sessions which the participants were able to finish the whole 45-minute duration of the experiment.
-   7. [y_T_val.RData](y_T_val.RData): In this file the transformed RPE scores for the 44 full sessions are provided which is calculated using the multivariate BOX Cox method. The codes for extracting the RPE and TRPE values are provided in our previous project which can be found in ['functional_anova'](./functional_anova).
+   7. [y_T_val.RData](y_T_val.RData): In this file the transformed RPE scores for the 44 full sessions are provided which is calculated using the multivariate BOX Cox method. The codes for extracting the RPE and TRPE values are provided in our previous project which can be found in ['functional_anova'](../functional_anova).
   
 
 ---

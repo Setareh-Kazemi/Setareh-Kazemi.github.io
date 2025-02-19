@@ -40,10 +40,10 @@ The [**data**](data) folder includes the below files:
    2. [input_data_sensors.RData](data/input_data_sensors.RData): This file contains the median feaures extracted from werable sensors attached to the trunk, wrist, and upperarm of participants.
    3. [y.RData](y.RData): In this file the raw RPE scores for the 43 full sessions are provided. full sessions are related to those sessions which the participants were able to finish the whole 45-minute duration of the experiment.
    4. [main_df.RData](main_df.RData): In this dataframe the information from task factors, individual characteristics, and sensors' median features are aggregated for all 43 participants. This file is needed to run the [metrics&plots_RPE.Rmd](metrics&plots_RPE.Rmd) file.
-Additionally, the fitted models are stored in [**this Figshare link**](https://doi.org/10.6084/m9.figshare.28447265.v1) for easier access to run the [metrics&plots_RPE.Rmd](metrics&plots_RPE.Rmd). 
+Additionally, the fitted models are stored in [**this Figshare link**](https://doi.org/10.6084/m9.figshare.28447265.v1) for easier access to run the [metrics&plots_RPE.Rmd](metrics&plots_RPE.Rmd), and [brms_coeff_analysis.Rmd](brms_coeff_analysis.Rmd). 
   
 ---
 ## Codes and Results: 
 
-The codes related to the main analyses represented in this study can be found in the ['hierarchical_regression_brms.Rmd'](hierarchical_regression_brms.Rmd) file which can be opened and rendered in R Studio after the data files are stored in a local directory same as this file. The codes related to calculation of evaluation metrics and the prediction plots can be found in [metrics&plots_RPE.Rmd](metrics&plots_RPE.Rmd). The plots and figures related to different parts of this analysis can be found in the [**figs**](figs) folder.
+The codes related to the main analyses represented in this study can be found in the ['hierarchical_regression_brms.Rmd'](hierarchical_regression_brms.Rmd) file which can be opened and rendered in R Studio after the data files are stored in a local directory same as this file. The codes related to calculation of evaluation metrics and the prediction plots can be found in [metrics&plots_RPE.Rmd](metrics&plots_RPE.Rmd). The codes related to the coefficient analysis of the models can be found in [brms_coeff_analysis.Rmd](brms_coeff_analysis.Rmd). The plots and figures related to different parts of this analysis can be found in the [**figs**](figs) folder.
 

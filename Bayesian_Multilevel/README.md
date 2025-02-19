@@ -29,7 +29,7 @@ In this document all the code, and inputs related to the associated paper entitl
 
 ---
 ## Introduction of the Experiment and Data:
-The experiment in this project is the same as the one explained in the [functional regression project](./functional_regression/). 
+The experiment in this project is the same as the one explained in the [functional regression project](../functional_regression). 
 The median features extracted from the wearable sensors are used as inputs to the models trained in this projects.
 
 ---

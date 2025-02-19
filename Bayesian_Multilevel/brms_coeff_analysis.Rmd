@@ -1,0 +1,278 @@
+---
+title: "Analysis of coefficients of hierarchical bayesian regression models"
+author:
+- name: "Setareh Kazemi Kheiri ^[Email: skazemik@buffalo.edu]"
+  affiliation: Department of Industrial and Systems Engineering, University at Buffalo
+  
+- name: "Hongyue Sun ^[Email: hongyuesun@uga.edu | Phone: +1-706-542-2329 | Website: <a href=\"https://engineering.uga.edu/team_member/hongyue-sun\">University  of Georgia Official</a> ]"
+  affiliation: College of Engineering, University of Georgia
+    
+- name: "Fadel Megahed ^[Email: megahefm@miamioh.edu | Phone: +1-513-529-4185 | Website: <a href=\"https://miamioh.edu/fsb/directory/?up=/directory/megahefm\">Miami University Official</a> ]"
+  affiliation: Farmer School of Business, Miami University
+    
+- name: "Lora Cavuoto ^[Email: loracavu@buffalo.edu | Phone: +1-716-645-4696 | Website: <a href=\"https://engineering.buffalo.edu/home/research/faculty/profiles.host.html/content/shared/engineering/industrial-systems/profiles/faculty/cavuoto-lora.html\">University at Buffalo Official</a> ]"
+  affiliation: Department of Industrial and Systems Engineering, University at Buffalo
+
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: refs.bib
+link-citations: true
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{chngpage}
+  - \usepackage{caption}
+  - \usepackage{chngpage}
+  - \usepackage{color}
+  - \usepackage[autostyle=true,english=american]{csquotes}
+  - \usepackage{csvsimple}
+  - \usepackage{framed}
+  - \usepackage{graphicx}
+  - \usepackage{hyperref}
+  - \usepackage{lineno}
+  - \usepackage{lscape}
+  - \usepackage{mathptmx}
+  - \usepackage{mathrsfs}
+  - \usepackage{makecell}
+  - \usepackage{mathtools}
+  - \usepackage{media9}
+  - \usepackage{multicol}
+  - \usepackage{multirow}
+  - \usepackage{secdot}
+  - \usepackage{sectsty}
+  - \usepackage{setspace}
+  - \usepackage{subcaption}
+  - \usepackage{tabulary}
+  - \usepackage{titlesec}
+  - \usepackage[colorinlistoftodos]{todonotes}
+  - \usepackage{url}
+
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyr, dplyr, ggplot2)
+
+```
+
+## R Markdown
+
+
+
+```{r load_data, cache=TRUE}
+
+model_files <- list.files(path = "./", pattern = "model_", full.names = TRUE)
+
+```
+
+```{r extract_CIs, cache = TRUE, , fig.width=20, fig.height=15}
+
+# Function to check if CI includes 0 and store results
+check_CI <- function(model, sub_con) {
+
+  summary_model <- summary(model)
+  
+  # Extract fixed effects and random effects
+  fixed_effects <- summary_model$fixed
+  random_effects <- summary_model$random[["subject"]]
+  sigma_effect <- summary_model[["spec_pars"]]
+  
+  # Check if CIs include 0 for different effects
+  fixed_significance <- ifelse(fixed_effects[, "l-95% CI"] <= 0 & fixed_effects[, "u-95% CI"] >= 0, 0, 1)
+  
+  fixed_results <- data.frame(
+    factor = rownames(fixed_effects),
+    significance = fixed_significance
+  )
+  
+  sigma_significance <- ifelse(sigma_effect[, "l-95% CI"] <= 0 & sigma_effect[, "u-95% CI"] >= 0, 0, 1)
+  
+    sigma_results <- data.frame(
+    factor = rownames(sigma_effect),
+    significance = sigma_significance
+  )
+  
+     CI_results <- rbind(fixed_results, sigma_results)
+    
+  if (!is.null(random_effects)) {
+    random_significance <- ifelse(random_effects[, "l-95% CI"] <= 0 & random_effects[, "u-95% CI"] >= 0, 0, 1)
+    
+    random_results <- data.frame(
+    factor = rownames(random_effects),
+    significance = random_significance
+    )
+    CI_results <- rbind(CI_results, random_results)
+    }
+    
+    colnames(CI_results)[2] <- sub_con
+    
+  return(CI_results)
+}
+
+# Apply the check_CI function to each model in the list
+
+heatmap_plot <- vector(mode = "list", length = length(model_files))
+summary_df <- vector(mode = "list", length = length(model_files))
+
+for ( k in 1:length(model_files)){
+  
+  model <- lapply(model_files[k], readRDS)
+  
+  model <- model[[1]]
+  
+  model_name <- sub("\\.rds$", "", basename(model_files[k]))
+
+  model_results <- vector(mode = "list", length = length(model))
+
+  perc <- c(0,0.001,0.22,0.33,0.44,0.56,0.66,0.78,0.89)
+
+  for ( i in 1:length(model)){
+    
+    model_results[[i]] <- vector(mode="list", length = 9)
+    
+    for (j in 1:9) {
+      
+      #print(paste0("---",i,"---",j,"---"))
+      
+      sub_con <- paste0(names(model)[i],"_",perc[j])
+      
+      model_results[[i]][[j]] <- suppressWarnings( check_CI(model[[i]][[j]], sub_con) )
+      
+      rownames(model_results[[i]][[j]]) <- model_results[[i]][[j]]$factor
+      
+    }
+  }
+
+  model_results <- lapply(model_results, function(model){ model = model[-2]})
+  
+  model_results <- lapply(model_results, function(model){ lapply(model, function(model){model = dplyr::filter(model,!(factor=="new_Intercept" | factor=="new_time"))})})
+  
+  model_results <- lapply(model_results, function(model){ lapply(model, function(model){model = dplyr::select(model,!(factor))})})
+
+  for ( i in 1:length(model_results)){
+    
+    model_results[[i]] <- do.call(cbind,model_results[[i]])
+  }
+
+  model_results <- do.call(cbind, model_results)
+
+  model_results <- model_results %>% 
+    mutate(sum = rowSums(across(everything()))) %>%
+    mutate(factor = rownames(model_results), .before = "Sub01-1.5-15_0")
+
+  model_results <- dplyr::select(model_results, -c("sum"))
+
+  model_results_long <- tidyr::pivot_longer(model_results, cols = 2:last_col(), names_to = "sub_con_perc", values_to = "significance")
+
+  factors <- unique(model_results_long$factor)
+
+  str_temp <- do.call(rbind, strsplit(model_results_long$sub_con_perc, split="_"))
+  
+  model_results_long <- model_results_long %>% 
+    mutate(sub_con = str_temp[,1], 
+           perc = as.numeric(str_temp[,2]),
+           .before = significance)
+  
+  summary_df[[k]] <- model_results_long %>%
+    group_by(factor, perc) %>%
+    summarise(sum_significance = sum(significance)/43, .groups = "drop") %>%
+    pivot_wider(names_from = perc, values_from = sum_significance, values_fill = 0)
+  
+  summary_df[[k]]$factor <- factor(summary_df[[k]]$factor, levels = factors)
+  
+  summary_df[[k]] <- summary_df[[k]] %>%
+    arrange(factor)
+    
+   rm(model, model_results, model_results_long)
+  gc()
+  
+  }
+  
+models_name <- c("Fixed Effects Model with Nonlinear Function of Time", "Fixed Effects Model with Linear Function of Time", "Mixed Effects Model with Nonlinear Function of Time", "Mixed Effects Model with Linear Function of Time" )
+
+ for ( k in 1:length(model_files)){ 
+   
+   colnames(summary_df[[k]]) <- c("factor", "0", "22th", "33th", "44th", "56th", "67th", "78th", "89th")
+
+  # Pivot the data frame to long format
+  summary_long <- summary_df[[k]] %>%
+    pivot_longer(cols = -factor, names_to = "perc", values_to = "percentage")
+
+  # Reorder the factor levels based on the total percentage
+  summary_long <- summary_long %>%
+    group_by(factor) %>%
+    mutate(total_perc = sum(percentage)) %>%
+    ungroup() %>%
+    arrange(desc(total_perc), factor)
+  
+  summary_long$percentage <- round(summary_long$percentage, 2)
+  
+  # Re-name factors
+  
+  summary_long$factor <- as.character(summary_long$factor)
+  
+  summary_long$factor[which(summary_long$factor=="Gender1")] <- "gender"
+  summary_long$factor[summary_long$factor=="Age"] <- "age"
+  
+  if ( k==1 | k==3){
+    summary_long$factor[summary_long$factor=="time_pc"] <- "time"
+    }
+  
+  summary_long$factor[grep("Accelerometer", summary_long$factor)] <- gsub("Accelerometer", "Acc", summary_long$factor[grep("Accelerometer", summary_long$factor)])
+  summary_long$factor[grep("Gyroscope", summary_long$factor)] <- gsub("Gyroscope", "Gyr", summary_long$factor[grep("Gyroscope", summary_long$factor)])
+  
+  # Create the heatmap
+  heatmap_plot[[k]] <- ggplot(summary_long, aes(x = perc, y = factor, fill = percentage)) +
+    geom_tile(color = "white") +
+  geom_text(aes(label = paste0(round(percentage*100, 1), "%")), color = "black", size = 7) +
+    scale_fill_gradient(low = "white", high = "darkgrey") +
+    labs(title = paste0("Heatmap of Percentage Significance Across 43 Samples for ", models_name[k]),
+         x = "Percentile",
+         y = "Factor",
+         fill = "Percentage") +
+    theme_minimal()+
+    theme(text = element_text(size = 20),
+          plot.title = element_text(size = 20, face = "bold"),     
+          axis.title = element_text(size = 20),                    
+          axis.text = element_text(size = 20),                     
+          legend.title = element_text(size = 20),                
+          legend.text = element_text(size = 18)) 
+  
+  # Print the heatmap
+  #print(heatmap_plot[[k]])
+
+  rm( summary_long)
+  gc()
+}
+```
+
+# Heat Map Plots {.tabset .tabset-fade .tabset-pills}
+
+```{r heat_plots,  cache = TRUE, , fig.width=20, fig.height=15, results='asis', echo=FALSE}
+
+# Plotting for all models
+
+for (i in seq_along(heatmap_plot)){
+  
+  model_name <- sub("\\.rds$", "", basename(model_files))[[i]]
+  
+  cat(paste0("## Model ",model_name, " \n\n"))
+  
+  print(heatmap_plot[[i]])
+  
+  cat("\n\n")
+}
+  
+
+```
+
+
+
+

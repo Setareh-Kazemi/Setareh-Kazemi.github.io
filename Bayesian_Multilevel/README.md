@@ -17,9 +17,9 @@ In this document all the code, and inputs related to the associated paper entitl
 
 1.  Data pre-processing;
 
-2.  Functional feature extraction;
+2.  Feature extraction from sensors' signals;
 
-3.  Fitting hierarchical regression to predict fatigue;
+3.  Fitting hierarchical Bayesian regression to predict fatigue;
 
 5.  Evaluation of models' prediction;
 
